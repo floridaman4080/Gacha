@@ -176,7 +176,7 @@
 
         .result-card {
             position: relative;
-            width: clamp(260px, 70vw, 380px);
+            width: min(72vw, 380px);
             min-height: unset;
             border-radius: 10px;
             padding: 0;
@@ -190,21 +190,17 @@
         }
 
         .result-card.reveal {
-            animation: cardReveal 1.3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+            animation: cardReveal 0.32s ease-out forwards;
         }
 
         .result-card.reveal-rare {
-            animation: cardRevealRare 1.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+            animation: cardReveal 0.32s ease-out forwards;
         }
 
         @keyframes cardReveal {
             0% {
-                transform: translateY(160px) scale(0.4) rotateY(180deg);
+                transform: translateY(-15px) scale(0.98) rotateY(0deg);
                 opacity: 0;
-            }
-
-            35% {
-                opacity: 1;
             }
 
             100% {
@@ -475,21 +471,40 @@
 
         /* Responsive */
         @media(max-width:480px) {
+            .ui-layer {
+                padding-bottom: max(28px, 7vh);
+            }
+
+            .page-title {
+                top: 18px;
+                letter-spacing: 5px;
+            }
+
             .result-card {
-                width: clamp(220px, 82vw, 300px);
-                min-height: 390px;
-                padding: 28px 20px;
+                width: min(72vw, 38vh, 300px);
+                min-height: unset;
+                padding: 0;
+            }
+
+            .card-symbol {
+                border-radius: 10px;
+            }
+
+            .card-overlay {
+                justify-content: center;
+                padding-bottom: 96px;
             }
 
             .btn {
-                padding: 14px 40px;
-                font-size: 16px;
-                letter-spacing: 3px;
+                padding: 13px 34px;
+                font-size: 15px;
+                letter-spacing: 2px;
             }
 
             .btn-reset {
-                padding: 10px 32px;
-                font-size: 14px;
+                margin-top: 10px;
+                padding: 10px 28px;
+                font-size: 13px;
             }
         }
     </style>
@@ -524,7 +539,7 @@
             { name: '灵光护体符', rarity: 'normal', image: 'images/灵光护体.png', desc: '灵光环绕，护佑身心。灵感涌动，思路清明。' },
             { name: '隐身符', rarity: 'normal', image: 'images/隐身符.png', desc: '隐匿身形，来去自如。低调行事，不惹尘埃。' },
         ];
-        const HIDDEN_CARD_NAME = '明辨符';
+        const HIDDEN_CARD_NAME = '隐身符';
 
         /* 六种符平分概率 */
         function drawCard() {
@@ -544,7 +559,7 @@
         scene3d.fog = new THREE.FogExp2(0x080604, 0.08);
 
         const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-        camera.position.set(0, 1.2, 7);
+        camera.position.set(0, getIdleCameraY(), getIdleCameraZ());
         camera.lookAt(0, 0, 0);
 
         /* ============ Lighting ============ */
@@ -882,10 +897,10 @@
         let lidTargetAngle = 0;
         let lidCurrentAngle = 0;
         let lidOpenProgress = 0;
-        let camTargetZ = 7;
-        let camCurrentZ = 7;
-        let camTargetY = 1.2;
-        let camCurrentY = 1.2;
+        let camTargetZ = getIdleCameraZ();
+        let camCurrentZ = camTargetZ;
+        let camTargetY = getIdleCameraY();
+        let camCurrentY = camTargetY;
         let glowTarget = 0;
         let glowCurrent = 0;
         let burstActive = false;
@@ -920,6 +935,11 @@
         /* ============ Easing Helpers ============ */
         function lerp(a, b, t) { return a + (b - a) * t; }
         function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+        function isMobileLayout() { return window.innerWidth <= 480 || window.innerWidth / window.innerHeight < 0.7; }
+        function getIdleCameraZ() { return isMobileLayout() ? 8.6 : 7; }
+        function getOpenCameraZ() { return isMobileLayout() ? 6.4 : 5.0; }
+        function getIdleCameraY() { return isMobileLayout() ? 1.05 : 1.2; }
+        function getOpenCameraY() { return isMobileLayout() ? 0.7 : 0.8; }
 
         /* ============ Start Draw ============ */
         btnDraw.addEventListener('click', () => {
@@ -948,8 +968,8 @@
             // Smooth reset of 3D state
             lidTargetAngle = 0;
             lidOpenProgress = 0;
-            camTargetZ = 7;
-            camTargetY = 1.2;
+            camTargetZ = getIdleCameraZ();
+            camTargetY = getIdleCameraY();
             glowTarget = 0;
             burstActive = false;
             burstStarted = false;
@@ -1027,8 +1047,8 @@
 
                 // Phase 1 (0 - 1s): Camera dolly in, stop floating
                 if (t < 1.0) {
-                    camTargetZ = 5.0;
-                    camTargetY = 0.8;
+                    camTargetZ = getOpenCameraZ();
+                    camTargetY = getOpenCameraY();
                     envelopeGroup.position.y *= 0.93;
                     envelopeGroup.rotation.z *= 0.9;
                     envelopeGroup.rotation.x = lerp(envelopeGroup.rotation.x, 0.35, 0.05);
@@ -1081,8 +1101,7 @@
                     cardFlyProgress = 0;
                 }
 
-                // Phase 5: Show card after the burst finishes
-                if (burstStarted && !burstActive && state === 'opening') {
+                if (burstStarted && !burstActive && cardFlyStarted && cardFlyProgress >= 1 && state === 'opening') {
                     state = 'card';
                     cardFlyActive = false;
                     flyingCardGroup.visible = false;
@@ -1195,6 +1214,14 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            if (state === 'idle') {
+                camTargetZ = getIdleCameraZ();
+                camCurrentZ = camTargetZ;
+                camTargetY = getIdleCameraY();
+                camCurrentY = camTargetY;
+                camera.position.z = camCurrentZ;
+                camera.position.y = camCurrentY;
+            }
         });
     </script>
 </body>
