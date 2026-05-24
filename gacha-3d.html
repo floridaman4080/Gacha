@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>神秘信封 · 3D抽卡</title>
+    <style>
+        *,
+        *::before,
+        *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-deep: #0a0806;
+            --gold: #ffd700;
+            --gold-warm: #f0a830;
+            --gold-dim: #b8860b;
+            --text-primary: #f5f0e8;
+            --text-secondary: #b8a890;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: var(--bg-deep);
+            color: var(--text-primary);
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        #three-canvas {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            display: block;
+        }
+
+        /* UI Layer */
+        .ui-layer {
+            position: fixed;
+            inset: 0;
+            z-index: 25;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+            padding-bottom: max(60px, 12vh);
+            pointer-events: none;
+        }
+
+        .btn {
+            pointer-events: auto;
+            padding: 16px 56px;
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 4px;
+            color: #fce8b3;
+            background: linear-gradient(180deg, #8a2020 0%, #5c1111 100%);
+            border: 2px solid var(--gold-dim);
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6), 0 0 30px rgba(255, 215, 0, 0.08);
+            transition: all 0.3s ease;
+            outline: none;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, transparent, rgba(255, 215, 0, 0.1), transparent);
+            transform: translateX(-100%);
+            transition: transform 0.6s;
+        }
+
+        .btn:hover::after {
+            transform: translateX(100%);
+        }
+
+        .btn:hover:not(:disabled) {
+            filter: brightness(1.15);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 28px rgba(212, 175, 55, 0.25), 0 0 40px rgba(255, 215, 0, 0.1);
+        }
+
+        .btn:active:not(:disabled) {
+            transform: translateY(1px);
+        }
+
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .btn.hidden {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(20px);
+            transition: all 0.4s ease;
+        }
+
+        .btn-reset {
+            margin-top: 16px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1.5px solid rgba(255, 255, 255, 0.12);
+            backdrop-filter: blur(8px);
+            color: var(--text-primary);
+            font-size: 15px;
+            padding: 12px 40px;
+            letter-spacing: 2px;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(15px);
+            transition: all 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .btn-reset.visible {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateY(0);
+        }
+
+        .btn-reset:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.25);
+        }
+
+        /* Page Title */
+        .page-title {
+            position: fixed;
+            top: clamp(20px, 4vh, 40px);
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 5;
+            font-size: clamp(12px, 2.5vw, 15px);
+            font-weight: 600;
+            letter-spacing: 8px;
+            color: var(--text-secondary);
+            opacity: 0.4;
+            transition: opacity 0.8s ease;
+        }
+
+        .page-title.dimmed {
+            opacity: 0.1;
+        }
+
+        /* Card Result Overlay */
+        .card-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.6s ease;
+            background: radial-gradient(ellipse at 50% 40%, rgba(10, 8, 6, 0.6), rgba(10, 8, 6, 0.92));
+            backdrop-filter: blur(3px);
+        }
+
+        .card-overlay.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .result-card {
+            position: relative;
+            width: clamp(260px, 70vw, 380px);
+            min-height: unset;
+            border-radius: 10px;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            transform: translateY(160px) scale(0.4) rotateY(180deg);
+            opacity: 0;
+            transition: none;
+        }
+
+        .result-card.reveal {
+            animation: cardReveal 1.3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+
+        .result-card.reveal-rare {
+            animation: cardRevealRare 1.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+
+        @keyframes cardReveal {
+            0% {
+                transform: translateY(160px) scale(0.4) rotateY(180deg);
+                opacity: 0;
+            }
+
+            35% {
+                opacity: 1;
+            }
+
+            100% {
+                transform: translateY(-15px) scale(1) rotateY(0deg);
+                opacity: 1;
+            }
+        }
+
+        @keyframes cardRevealRare {
+            0% {
+                transform: translateY(160px) scale(0.3) rotateY(180deg);
+                opacity: 0;
+            }
+
+            25% {
+                opacity: 1;
+            }
+
+            55% {
+                transform: translateY(-35px) scale(1.1) rotateY(8deg);
+            }
+
+            75% {
+                transform: translateY(-20px) scale(1.02) rotateY(-3deg);
+            }
+
+            100% {
+                transform: translateY(-15px) scale(1) rotateY(0deg);
+                opacity: 1;
+            }
+        }
+
+        .result-card.normal {
+            background: transparent;
+            border: none;
+            box-shadow: none;
+        }
+
+        .result-card.rare {
+            background: linear-gradient(150deg, #2a1a00, #3a2800, #2a1a00);
+            border: 2px solid rgba(255, 215, 0, 0.45);
+            box-shadow: 0 0 80px rgba(255, 215, 0, 0.25), 0 0 160px rgba(240, 168, 48, 0.1), 0 24px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        }
+
+        .result-card.rare::before {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border-radius: 10px;
+            background: linear-gradient(105deg, transparent 20%, rgba(255, 215, 0, 0.12) 45%, rgba(255, 215, 0, 0.28) 50%, rgba(255, 215, 0, 0.12) 55%, transparent 80%);
+            background-size: 200% 100%;
+            animation: shimmer 3s ease-in-out infinite;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        @keyframes shimmer {
+            0% {
+                background-position: 200% 0;
+            }
+
+            100% {
+                background-position: -200% 0;
+            }
+        }
+
+        .rarity-badge {
+            position: relative;
+            z-index: 1;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 3px;
+            padding: 5px 18px;
+            border-radius: 20px;
+            margin-bottom: 28px;
+        }
+
+        .normal .rarity-badge {
+            color: var(--text-secondary);
+            border: 1px solid rgba(200, 160, 100, 0.25);
+            background: rgba(200, 160, 100, 0.06);
+        }
+
+        .rare .rarity-badge {
+            color: var(--gold);
+            border: 1px solid rgba(255, 215, 0, 0.35);
+            background: rgba(255, 215, 0, 0.08);
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.4);
+        }
+
+        .card-symbol {
+            position: relative;
+            z-index: 1;
+            font-size: 54px;
+            margin-bottom: 0;
+            width: 100%;
+            height: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .card-symbol img {
+            width: 100%;
+            height: auto;
+            object-fit: contain;
+            display: block;
+        }
+
+        .normal .card-symbol {
+            background: transparent;
+        }
+
+        .rare .card-symbol {
+            background: radial-gradient(circle, rgba(255, 215, 0, 0.18), transparent);
+            box-shadow: 0 0 50px rgba(255, 215, 0, 0.2);
+            animation: pulseGold 2.5s ease-in-out infinite;
+        }
+
+        @keyframes pulseGold {
+
+            0%,
+            100% {
+                box-shadow: 0 0 50px rgba(255, 215, 0, 0.2);
+            }
+
+            50% {
+                box-shadow: 0 0 80px rgba(255, 215, 0, 0.35);
+            }
+        }
+
+        .card-name {
+            position: relative;
+            z-index: 1;
+            font-size: clamp(22px, 5vw, 28px);
+            font-weight: 800;
+            margin-bottom: 8px;
+            line-height: 1.3;
+        }
+
+        .rare .card-name {
+            background: linear-gradient(135deg, var(--gold), var(--gold-warm), var(--gold));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.3));
+        }
+
+        .card-divider {
+            position: relative;
+            z-index: 1;
+            width: 60px;
+            height: 2px;
+            margin: 16px 0;
+            border-radius: 1px;
+        }
+
+        .normal .card-divider {
+            background: linear-gradient(90deg, transparent, rgba(200, 160, 100, 0.4), transparent);
+        }
+
+        .rare .card-divider {
+            background: linear-gradient(90deg, transparent, var(--gold), transparent);
+            box-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
+        }
+
+        .card-desc {
+            position: relative;
+            z-index: 1;
+            font-size: 14px;
+            line-height: 1.8;
+            color: var(--text-secondary);
+            max-width: 250px;
+        }
+
+        .rare .card-desc {
+            color: rgba(255, 230, 180, 0.65);
+        }
+
+        /* Screen flash */
+        .screen-flash {
+            position: fixed;
+            inset: 0;
+            z-index: 15;
+            pointer-events: none;
+            opacity: 0;
+        }
+
+        .screen-flash.flash-normal {
+            animation: flashN 0.7s ease-out forwards;
+            background: radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.32), transparent 65%);
+        }
+
+        .screen-flash.flash-rare {
+            animation: flashR 1.1s ease-out forwards;
+            background: radial-gradient(circle at 50% 42%, rgba(255, 215, 0, 0.5), transparent 60%);
+        }
+
+        @keyframes flashN {
+            0% {
+                opacity: 0
+            }
+
+            20% {
+                opacity: 1
+            }
+
+            100% {
+                opacity: 0
+            }
+        }
+
+        @keyframes flashR {
+            0% {
+                opacity: 0
+            }
+
+            12% {
+                opacity: 1
+            }
+
+            35% {
+                opacity: 0.8
+            }
+
+            100% {
+                opacity: 0
+            }
+        }
+
+        @keyframes shakeScreen {
+
+            0%,
+            100% {
+                transform: translate(0)
+            }
+
+            10% {
+                transform: translate(-4px, -3px)
+            }
+
+            20% {
+                transform: translate(4px, 2px)
+            }
+
+            30% {
+                transform: translate(-3px, 4px)
+            }
+
+            40% {
+                transform: translate(3px, -2px)
+            }
+
+            50% {
+                transform: translate(-2px, 1px)
+            }
+
+            60% {
+                transform: translate(1px, -1px)
+            }
+        }
+
+        .shake-it {
+            animation: shakeScreen 0.6s ease-out;
+        }
+
+        /* Responsive */
+        @media(max-width:480px) {
+            .result-card {
+                width: clamp(220px, 82vw, 300px);
+                min-height: 390px;
+                padding: 28px 20px;
+            }
+
+            .btn {
+                padding: 14px 40px;
+                font-size: 16px;
+                letter-spacing: 3px;
+            }
+
+            .btn-reset {
+                padding: 10px 32px;
+                font-size: 14px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="three-canvas"></canvas>
+    <div class="page-title" id="pageTitle">神 秘 信 封</div>
+    <div class="screen-flash" id="screenFlash"></div>
+    <div class="ui-layer">
+        <button class="btn" id="btnDraw">抽 卡</button>
+        <button class="btn btn-reset" id="btnReset">再抽一次</button>
+    </div>
+    <div class="card-overlay" id="cardOverlay">
+        <div class="result-card" id="resultCard">
+            <div class="rarity-badge" id="rarityBadge"></div>
+            <div class="card-symbol" id="cardSymbol"></div>
+            <div class="card-name" id="cardName"></div>
+            <div class="card-divider"></div>
+            <div class="card-desc" id="cardDesc"></div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        /* ============ Card Pool & Probability Logic ============ */
+        const CARD_POOL = [
+            { name: '诸事皆顺符', rarity: 'normal', image: 'images/诸事皆顺.png', desc: '万事和合，顺风顺水。持此符者，诸般阻碍自行化解。' },
+            { name: '退散戾气符', rarity: 'normal', image: 'images/戾气退散.png', desc: '驱散周身戾气，远离纷争口角，心境自然平和。' },
+            { name: '防窥结界符', rarity: 'normal', image: 'images/防窥结界.png', desc: '结界守护，隐私无忧。旁人窥探皆被隔绝。' },
+            { name: '明辨符', rarity: 'normal', image: 'images/明辨符.png', desc: '目光如炬，洞察真伪。一切迷障在眼前无所遁形。' },
+            { name: '灵光护体符', rarity: 'normal', image: 'images/灵光护体.png', desc: '灵光环绕，护佑身心。灵感涌动，思路清明。' },
+            { name: '隐身符', rarity: 'normal', image: 'images/隐身符.png', desc: '隐匿身形，来去自如。低调行事，不惹尘埃。' },
+        ];
+        const HIDDEN_CARD_NAME = '明辨符';
+
+        /* 六种符平分概率 */
+        function drawCard() {
+            return CARD_POOL[Math.floor(Math.random() * CARD_POOL.length)];
+        }
+
+        /* ============ Three.js Scene ============ */
+        const canvas = document.getElementById('three-canvas');
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setClearColor(0x080604, 1);
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
+
+        const scene3d = new THREE.Scene();
+        scene3d.fog = new THREE.FogExp2(0x080604, 0.08);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 1.2, 7);
+        camera.lookAt(0, 0, 0);
+
+        /* ============ Lighting ============ */
+        const ambientLight = new THREE.AmbientLight(0xffe8cc, 0.25);
+        scene3d.add(ambientLight);
+
+        const mainLight = new THREE.SpotLight(0xffd080, 1.2, 20, Math.PI * 0.3, 0.5, 1);
+        mainLight.position.set(0, 5, 5);
+        mainLight.target.position.set(0, 0, 0);
+        scene3d.add(mainLight);
+        scene3d.add(mainLight.target);
+
+        const fillLight = new THREE.PointLight(0xff6030, 0.3, 10);
+        fillLight.position.set(-4, 2, 2);
+        scene3d.add(fillLight);
+
+        const backLight = new THREE.PointLight(0xffa050, 0.2, 8);
+        backLight.position.set(2, -1, -4);
+        scene3d.add(backLight);
+
+        // Dynamic glow light (activates during opening)
+        const glowLight = new THREE.PointLight(0xffffff, 0, 8);
+        glowLight.position.set(0, 1, 0);
+        scene3d.add(glowLight);
+
+        /* ============ 3D Envelope Construction ============ */
+        const envelopeGroup = new THREE.Group();
+        envelopeGroup.rotation.x = 0.2;
+        scene3d.add(envelopeGroup);
+
+        // Materials
+        const envMat = new THREE.MeshStandardMaterial({ color: 0x8b1a1a, roughness: 0.55, metalness: 0.1 });
+        const envDarkMat = new THREE.MeshStandardMaterial({ color: 0x5c1010, roughness: 0.7, metalness: 0.05 });
+        const envInnerMat = new THREE.MeshStandardMaterial({ color: 0x1a0a08, roughness: 0.9, metalness: 0 });
+        const goldMat = new THREE.MeshStandardMaterial({ color: 0xd4af37, roughness: 0.25, metalness: 0.8 });
+
+        // Envelope body (box with thickness)
+        const bodyW = 3.0, bodyH = 0.12, bodyD = 2.0;
+        const bodyGeo = new THREE.BoxGeometry(bodyW, bodyH, bodyD);
+        const envBody = new THREE.Mesh(bodyGeo, envMat);
+        envelopeGroup.add(envBody);
+
+        // Top surface (slightly different shade)
+        const topGeo = new THREE.PlaneGeometry(bodyW, bodyD);
+        const topFace = new THREE.Mesh(topGeo, envDarkMat);
+        topFace.rotation.x = -Math.PI / 2;
+        topFace.position.y = bodyH / 2 + 0.001;
+        envelopeGroup.add(topFace);
+
+        // Inner dark surface (visible when lid opens)
+        const innerGeo = new THREE.PlaneGeometry(bodyW * 0.92, bodyD * 0.88);
+        const innerFace = new THREE.Mesh(innerGeo, envInnerMat);
+        innerFace.rotation.x = -Math.PI / 2;
+        innerFace.position.y = bodyH / 2 + 0.002;
+        envelopeGroup.add(innerFace);
+
+        // Gold trim edges
+        const trimGeo = new THREE.BoxGeometry(bodyW + 0.04, bodyH + 0.02, 0.02);
+        const trimFront = new THREE.Mesh(trimGeo, goldMat);
+        trimFront.position.z = bodyD / 2;
+        envelopeGroup.add(trimFront);
+        const trimBack = trimFront.clone();
+        trimBack.position.z = -bodyD / 2;
+        envelopeGroup.add(trimBack);
+        const trimSideGeo = new THREE.BoxGeometry(0.02, bodyH + 0.02, bodyD + 0.04);
+        const trimLeft = new THREE.Mesh(trimSideGeo, goldMat);
+        trimLeft.position.x = -bodyW / 2;
+        envelopeGroup.add(trimLeft);
+        const trimRight = trimLeft.clone();
+        trimRight.position.x = bodyW / 2;
+        envelopeGroup.add(trimRight);
+
+        // Lid (triangular flap, hinged at back edge)
+        const lidShape = new THREE.Shape();
+        lidShape.moveTo(-bodyW / 2, 0);
+        lidShape.lineTo(0, -bodyD * 0.55);
+        lidShape.lineTo(bodyW / 2, 0);
+        lidShape.closePath();
+        const lidGeo = new THREE.ShapeGeometry(lidShape);
+        const lidMat = new THREE.MeshStandardMaterial({ color: 0x9c1d1d, roughness: 0.5, metalness: 0.12, side: THREE.DoubleSide });
+        const lidMesh = new THREE.Mesh(lidGeo, lidMat);
+        // Rotate so triangle lies flat in XZ plane, tip pointing +Z (forward)
+        lidMesh.rotation.x = -Math.PI / 2;
+
+        // Lid pivot at back edge, raised above body to prevent z-fighting
+        const lidPivot = new THREE.Group();
+        lidPivot.position.set(0, bodyH / 2 + 0.015, -bodyD / 2);
+        lidPivot.add(lidMesh);
+        envelopeGroup.add(lidPivot);
+
+        // Lid gold edge (in XZ plane, matching lid shape)
+        const lidEdgePts = [
+            new THREE.Vector3(-bodyW / 2 - 0.01, 0.002, 0),
+            new THREE.Vector3(0, 0.002, bodyD * 0.55 + 0.01),
+            new THREE.Vector3(bodyW / 2 + 0.01, 0.002, 0)
+        ];
+        const lidEdgeGeo = new THREE.BufferGeometry().setFromPoints(lidEdgePts);
+        const lidEdgeLine = new THREE.Line(lidEdgeGeo, new THREE.LineBasicMaterial({ color: 0xd4af37 }));
+        lidPivot.add(lidEdgeLine);
+
+        // Wax seal on lid (centered on triangle, upright when closed)
+        const sealGeo = new THREE.CylinderGeometry(0.2, 0.22, 0.05, 32);
+        const sealMesh = new THREE.Mesh(sealGeo, new THREE.MeshStandardMaterial({ color: 0xc0392b, roughness: 0.3, metalness: 0.5 }));
+        sealMesh.position.set(0, 0.035, bodyD * 0.18);
+        lidPivot.add(sealMesh);
+
+        // Seal emboss (gold disc)
+        const sealTopGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.02, 32);
+        const sealTop = new THREE.Mesh(sealTopGeo, goldMat);
+        sealTop.position.set(0, 0.06, bodyD * 0.18);
+        lidPivot.add(sealTop);
+
+        // Inner glow plane with radial-fade shader
+        const glowUniforms = {
+            uOpacity: { value: 0.0 },
+            uColor: { value: new THREE.Color(0xffffff) },
+            uTime: { value: 0.0 }
+        };
+        const glowShaderMat = new THREE.ShaderMaterial({
+            uniforms: glowUniforms,
+            vertexShader: [
+                'varying vec2 vUv;',
+                'void main() {',
+                '  vUv = uv;',
+                '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+                '}'
+            ].join('\n'),
+            fragmentShader: [
+                'uniform float uOpacity;',
+                'uniform vec3 uColor;',
+                'uniform float uTime;',
+                'varying vec2 vUv;',
+                'void main() {',
+                '  float dist = length(vUv - 0.5) * 2.0;',
+                '  float pulse = 1.0 + sin(uTime * 3.0) * 0.08;',
+                '  float alpha = smoothstep(1.0, 0.0, dist * pulse) * uOpacity;',
+                '  alpha *= alpha;',
+                '  vec3 col = uColor + vec3(0.1, 0.05, 0.0) * (1.0 - dist);',
+                '  gl_FragColor = vec4(col, alpha);',
+                '}'
+            ].join('\n'),
+            transparent: true,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+        });
+        const glowPlaneGeo = new THREE.PlaneGeometry(bodyW * 1.1, bodyD * 1.1);
+        const glowPlane = new THREE.Mesh(glowPlaneGeo, glowShaderMat);
+        glowPlane.rotation.x = -Math.PI / 2;
+        glowPlane.position.y = bodyH / 2 + 0.02;
+        envelopeGroup.add(glowPlane);
+
+        /* ============ Background Particle Field ============ */
+        const BG_PARTICLES = 400;
+        const bgParticlesGeo = new THREE.BufferGeometry();
+        const bgPos = new Float32Array(BG_PARTICLES * 3);
+        const bgSizes = new Float32Array(BG_PARTICLES);
+        const bgParticleSpeeds = [];
+        for (let i = 0; i < BG_PARTICLES; i++) {
+            bgPos[i * 3] = (Math.random() - 0.5) * 20;
+            bgPos[i * 3 + 1] = (Math.random() - 0.5) * 14;
+            bgPos[i * 3 + 2] = (Math.random() - 0.5) * 14 - 3;
+            bgSizes[i] = Math.random() * 3 + 1;
+            bgParticleSpeeds.push({
+                vy: Math.random() * 0.004 + 0.001,
+                vx: (Math.random() - 0.5) * 0.001,
+                phase: Math.random() * Math.PI * 2
+            });
+        }
+        bgParticlesGeo.setAttribute('position', new THREE.BufferAttribute(bgPos, 3));
+        bgParticlesGeo.setAttribute('size', new THREE.BufferAttribute(bgSizes, 1));
+
+        const bgParticleMat = new THREE.PointsMaterial({
+            color: 0xffd080,
+            size: 0.035,
+            transparent: true,
+            opacity: 0.35,
+            blending: THREE.AdditiveBlending,
+            sizeAttenuation: true
+        });
+        const bgParticles = new THREE.Points(bgParticlesGeo, bgParticleMat);
+        scene3d.add(bgParticles);
+
+        /* ============ Burst Particle System ============ */
+        const BURST_COUNT = 500;
+        const burstGeo = new THREE.BufferGeometry();
+        const burstPos = new Float32Array(BURST_COUNT * 3);
+        const burstCol = new Float32Array(BURST_COUNT * 3);
+        const burstVel = [];
+        for (let i = 0; i < BURST_COUNT; i++) {
+            burstPos[i * 3] = 0; burstPos[i * 3 + 1] = 0; burstPos[i * 3 + 2] = 0;
+            burstCol[i * 3] = 1; burstCol[i * 3 + 1] = 0.84; burstCol[i * 3 + 2] = 0;
+            const a = Math.random() * Math.PI * 2;
+            const e = (Math.random() - 0.35) * Math.PI;
+            const s = Math.random() * 0.15 + 0.03;
+            burstVel.push({
+                vx: Math.cos(a) * Math.cos(e) * s,
+                vy: Math.sin(e) * s + 0.03,
+                vz: Math.sin(a) * Math.cos(e) * s,
+                life: 1.0,
+                decay: Math.random() * 0.012 + 0.006
+            });
+        }
+        burstGeo.setAttribute('position', new THREE.BufferAttribute(burstPos, 3));
+        burstGeo.setAttribute('color', new THREE.BufferAttribute(burstCol, 3));
+        // Circle texture for smooth round particles
+        const _cc = document.createElement('canvas');
+        _cc.width = 64; _cc.height = 64;
+        const _cx = _cc.getContext('2d');
+        const _cg = _cx.createRadialGradient(32, 32, 0, 32, 32, 32);
+        _cg.addColorStop(0, 'rgba(255,255,255,1)');
+        _cg.addColorStop(0.3, 'rgba(255,255,255,0.8)');
+        _cg.addColorStop(0.7, 'rgba(255,255,255,0.2)');
+        _cg.addColorStop(1, 'rgba(255,255,255,0)');
+        _cx.fillStyle = _cg;
+        _cx.fillRect(0, 0, 64, 64);
+        const circleTexture = new THREE.CanvasTexture(_cc);
+
+        const burstMat = new THREE.PointsMaterial({
+            size: 0.045,
+            map: circleTexture,
+            transparent: true,
+            opacity: 0,
+            blending: THREE.AdditiveBlending,
+            vertexColors: true,
+            sizeAttenuation: true,
+            depthWrite: false
+        });
+        const burstMesh = new THREE.Points(burstGeo, burstMat);
+        scene3d.add(burstMesh);
+
+        /* ============ Spiral Ring Particles (ritual effect) ============ */
+        const RING_COUNT = 120;
+        const ringGeo = new THREE.BufferGeometry();
+        const ringPos = new Float32Array(RING_COUNT * 3);
+        for (let i = 0; i < RING_COUNT; i++) {
+            const angle = (i / RING_COUNT) * Math.PI * 2;
+            ringPos[i * 3] = Math.cos(angle) * 2;
+            ringPos[i * 3 + 1] = -0.5;
+            ringPos[i * 3 + 2] = Math.sin(angle) * 2;
+        }
+        ringGeo.setAttribute('position', new THREE.BufferAttribute(ringPos, 3));
+        const ringMat = new THREE.PointsMaterial({
+            color: 0xffffff, size: 0.04, transparent: true, opacity: 0,
+            blending: THREE.AdditiveBlending, sizeAttenuation: true
+        });
+        const ringParticles = new THREE.Points(ringGeo, ringMat);
+        scene3d.add(ringParticles);
+
+        const flyingCardGroup = new THREE.Group();
+        flyingCardGroup.visible = false;
+        scene3d.add(flyingCardGroup);
+
+        const flyingCardGeo = new THREE.PlaneGeometry(1, 1);
+        const flyingCardMat = new THREE.MeshBasicMaterial({
+            transparent: true,
+            opacity: 0,
+            side: THREE.DoubleSide,
+            depthWrite: false
+        });
+        const flyingCardMesh = new THREE.Mesh(flyingCardGeo, flyingCardMat);
+        flyingCardGroup.add(flyingCardMesh);
+
+        const textureLoader = new THREE.TextureLoader();
+        let flyingCardTexture = null;
+        let flyingCardToken = 0;
+        let flyingCardReady = false;
+
+        function resetFlyingCard() {
+            flyingCardGroup.visible = false;
+            flyingCardGroup.position.set(0, 0.12, -0.2);
+            flyingCardGroup.rotation.set(-Math.PI / 2, Math.PI * 2.4, -0.12);
+            flyingCardGroup.scale.setScalar(0.12);
+            flyingCardMat.opacity = 0;
+        }
+
+        function prepareFlyingCard(result) {
+            const token = ++flyingCardToken;
+            flyingCardReady = false;
+            if (flyingCardTexture) {
+                flyingCardTexture.dispose();
+                flyingCardTexture = null;
+            }
+            flyingCardMat.map = null;
+            flyingCardMat.needsUpdate = true;
+            flyingCardMesh.scale.set(1.45, 2.05, 1);
+            resetFlyingCard();
+            textureLoader.load(result.image, (texture) => {
+                if (token !== flyingCardToken) {
+                    texture.dispose();
+                    return;
+                }
+                texture.encoding = THREE.sRGBEncoding;
+                texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+                const aspect = texture.image.width / texture.image.height;
+                const height = 2.1;
+                flyingCardMesh.scale.set(height * aspect, height, 1);
+                flyingCardTexture = texture;
+                flyingCardMat.map = texture;
+                flyingCardMat.needsUpdate = true;
+                flyingCardReady = true;
+            });
+        }
+
+        function updateFlyingCard(dt) {
+            if (!cardFlyActive) return;
+            if (!flyingCardReady) return;
+            cardFlyProgress = Math.min(cardFlyProgress + dt / 1.25, 1);
+            const p = easeOutCubic(cardFlyProgress);
+            const arc = Math.sin(cardFlyProgress * Math.PI) * 0.55;
+            flyingCardGroup.visible = true;
+            flyingCardGroup.position.x = Math.sin(cardFlyProgress * Math.PI) * 0.08;
+            flyingCardGroup.position.y = lerp(0.12, 1.45, p) + arc;
+            flyingCardGroup.position.z = lerp(-0.2, 1.35, p);
+            flyingCardGroup.rotation.x = lerp(-Math.PI / 2, 0.02, p);
+            flyingCardGroup.rotation.y = Math.PI * 2.4 * (1 - p);
+            flyingCardGroup.rotation.z = Math.sin(cardFlyProgress * Math.PI) * 0.18;
+            flyingCardGroup.scale.setScalar(lerp(0.12, 1.16, p));
+            flyingCardMat.opacity = Math.min(1, cardFlyProgress * 2.2);
+        }
+
+        function applyDrawLightColor(result) {
+            const isRare = result.rarity === 'rare' || result.name === HIDDEN_CARD_NAME;
+            const color = isRare ? 0xffd700 : 0xffffff;
+            glowUniforms.uColor.value.setHex(color);
+            glowLight.color.setHex(color);
+            ringMat.color.setHex(color);
+        }
+
+        /* ============ Animation State Machine ============ */
+        let state = 'idle'; // idle | opening | burst | card | done
+        let stateTime = 0;
+        let floatPhase = 0;
+        let currentResult = null;
+        let lidTargetAngle = 0;
+        let lidCurrentAngle = 0;
+        let lidOpenProgress = 0;
+        let camTargetZ = 7;
+        let camCurrentZ = 7;
+        let camTargetY = 1.2;
+        let camCurrentY = 1.2;
+        let glowTarget = 0;
+        let glowCurrent = 0;
+        let burstActive = false;
+        let burstStarted = false;
+        let ringActive = false;
+        let ringAngle = 0;
+        let cardFlyActive = false;
+        let cardFlyStarted = false;
+        let cardFlyProgress = 0;
+        let mouseX = 0, mouseY = 0;
+
+        /* ============ Mouse Tracking ============ */
+        document.addEventListener('mousemove', (e) => {
+            mouseX = (e.clientX / window.innerWidth - 0.5) * 2;
+            mouseY = (e.clientY / window.innerHeight - 0.5) * 2;
+        });
+        document.addEventListener('touchmove', (e) => {
+            if (e.touches.length > 0) {
+                mouseX = (e.touches[0].clientX / window.innerWidth - 0.5) * 2;
+                mouseY = (e.touches[0].clientY / window.innerHeight - 0.5) * 2;
+            }
+        });
+
+        /* ============ DOM References ============ */
+        const btnDraw = document.getElementById('btnDraw');
+        const btnReset = document.getElementById('btnReset');
+        const cardOverlay = document.getElementById('cardOverlay');
+        const resultCard = document.getElementById('resultCard');
+        const screenFlash = document.getElementById('screenFlash');
+        const pageTitle = document.getElementById('pageTitle');
+
+        /* ============ Easing Helpers ============ */
+        function lerp(a, b, t) { return a + (b - a) * t; }
+        function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+
+        /* ============ Start Draw ============ */
+        btnDraw.addEventListener('click', () => {
+            if (state !== 'idle') return;
+            state = 'opening';
+            stateTime = 0;
+            btnDraw.disabled = true;
+            currentResult = drawCard();
+            applyDrawLightColor(currentResult);
+            cardFlyActive = false;
+            cardFlyStarted = false;
+            cardFlyProgress = 0;
+            prepareFlyingCard(currentResult);
+            pageTitle.classList.add('dimmed');
+        });
+
+        /* ============ Reset ============ */
+        btnReset.addEventListener('click', () => {
+            if (state !== 'done') return;
+            cardOverlay.classList.remove('visible');
+            resultCard.className = 'result-card';
+            btnReset.classList.remove('visible');
+            screenFlash.className = 'screen-flash';
+            pageTitle.classList.remove('dimmed');
+
+            // Smooth reset of 3D state
+            lidTargetAngle = 0;
+            lidOpenProgress = 0;
+            camTargetZ = 7;
+            camTargetY = 1.2;
+            glowTarget = 0;
+            burstActive = false;
+            burstStarted = false;
+            ringActive = false;
+            cardFlyActive = false;
+            cardFlyStarted = false;
+            cardFlyProgress = 0;
+            ringMat.opacity = 0;
+            burstMat.opacity = 0;
+            resetFlyingCard();
+
+            setTimeout(() => {
+                state = 'idle';
+                btnDraw.disabled = false;
+                btnDraw.classList.remove('hidden');
+            }, 700);
+        });
+
+        /* ============ Show Card Result in DOM ============ */
+        function showCardResult(result) {
+            const isRare = result.rarity === 'rare' || result.name === HIDDEN_CARD_NAME;
+            resultCard.className = 'result-card ' + result.rarity;
+            document.getElementById('rarityBadge').hidden = true;
+            const cardSymbol = document.getElementById('cardSymbol');
+            cardSymbol.textContent = '';
+            const cardImage = document.createElement('img');
+            cardImage.src = result.image;
+            cardImage.alt = result.name;
+            cardSymbol.appendChild(cardImage);
+            document.getElementById('cardName').hidden = true;
+            document.querySelector('.card-divider').hidden = true;
+            document.getElementById('cardDesc').hidden = true;
+
+            cardOverlay.classList.add('visible');
+            requestAnimationFrame(() => {
+                resultCard.classList.add(isRare ? 'reveal-rare' : 'reveal');
+            });
+
+            screenFlash.className = 'screen-flash';
+            if (isRare) {
+                document.body.classList.add('shake-it');
+                setTimeout(() => document.body.classList.remove('shake-it'), 600);
+            }
+
+            btnReset.classList.add('visible');
+            state = 'done';
+        }
+
+        /* ============ Main Animation Loop ============ */
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = clock.getDelta();
+            const elapsed = clock.getElapsedTime();
+            stateTime += dt;
+
+            /* --- Idle: floating envelope + mouse follow --- */
+            if (state === 'idle') {
+                floatPhase += dt * 1.2;
+                const floatY = Math.sin(floatPhase) * 0.15;
+                const targetPosY = floatY + mouseY * 0.18;
+                const targetRotX = 0.2 + Math.sin(floatPhase * 0.4) * 0.03 + mouseY * 0.1;
+                const targetRotZ = Math.sin(floatPhase * 0.6) * 0.025 - mouseX * 0.08;
+                const targetPosX = mouseX * 0.12;
+                envelopeGroup.position.y = lerp(envelopeGroup.position.y, targetPosY, 0.06);
+                envelopeGroup.position.x = lerp(envelopeGroup.position.x, targetPosX, 0.06);
+                envelopeGroup.rotation.x = lerp(envelopeGroup.rotation.x, targetRotX, 0.06);
+                envelopeGroup.rotation.z = lerp(envelopeGroup.rotation.z, targetRotZ, 0.06);
+            }
+
+            /* --- Opening Sequence --- */
+            if (state === 'opening') {
+                const t = stateTime;
+
+                // Phase 1 (0 - 1s): Camera dolly in, stop floating
+                if (t < 1.0) {
+                    camTargetZ = 5.0;
+                    camTargetY = 0.8;
+                    envelopeGroup.position.y *= 0.93;
+                    envelopeGroup.rotation.z *= 0.9;
+                    envelopeGroup.rotation.x = lerp(envelopeGroup.rotation.x, 0.35, 0.05);
+                }
+
+                // Phase 2 (0.8 - 2.0s): Lid opens with spring
+                if (t > 0.8 && t < 2.0) {
+                    lidTargetAngle = -Math.PI * 0.95;
+                    // Ring particles activate
+                    if (!ringActive) { ringActive = true; }
+                }
+
+                // Phase 3 (1.8 - 3.0s): Glow intensifies
+                if (t > 1.8) {
+                    glowTarget = Math.min((t - 1.8) / 1.0, 1.0);
+                }
+
+                // Phase 4 (2.8s): Burst particles
+                if (t > 2.8 && !burstStarted) {
+                    burstStarted = true;
+                    burstActive = true;
+                    burstMat.opacity = 1.0;
+                    const isRare = currentResult.rarity === 'rare' || currentResult.name === HIDDEN_CARD_NAME;
+                    for (let i = 0; i < BURST_COUNT; i++) {
+                        burstPos[i * 3] = (Math.random() - 0.5) * 0.5;
+                        burstPos[i * 3 + 1] = 0.5;
+                        burstPos[i * 3 + 2] = (Math.random() - 0.5) * 0.3;
+                        const a = Math.random() * Math.PI * 2;
+                        const e = (Math.random() - 0.3) * Math.PI;
+                        const spd = Math.random() * (isRare ? 0.2 : 0.12) + 0.04;
+                        burstVel[i].vx = Math.cos(a) * Math.cos(e) * spd;
+                        burstVel[i].vy = Math.sin(e) * spd + 0.04;
+                        burstVel[i].vz = Math.sin(a) * Math.cos(e) * spd;
+                        burstVel[i].life = 1.0;
+                        burstVel[i].decay = Math.random() * (isRare ? 0.02 : 0.026) + 0.018;
+                        if (isRare) {
+                            burstCol[i * 3] = 1; burstCol[i * 3 + 1] = Math.random() * 0.3 + 0.7; burstCol[i * 3 + 2] = Math.random() * 0.1;
+                        } else {
+                            burstCol[i * 3] = 1; burstCol[i * 3 + 1] = 1; burstCol[i * 3 + 2] = 1;
+                        }
+                    }
+                    burstGeo.attributes.position.needsUpdate = true;
+                    burstGeo.attributes.color.needsUpdate = true;
+                    btnDraw.classList.add('hidden');
+                }
+
+                if (t > 2.45 && !cardFlyStarted && flyingCardReady) {
+                    cardFlyStarted = true;
+                    cardFlyActive = true;
+                    cardFlyProgress = 0;
+                }
+
+                // Phase 5: Show card after the burst finishes
+                if (burstStarted && !burstActive && state === 'opening') {
+                    state = 'card';
+                    cardFlyActive = false;
+                    flyingCardGroup.visible = false;
+                    showCardResult(currentResult);
+                }
+            }
+
+            /* --- Smooth interpolations --- */
+            // Lid rotation (non-linear easeOutBack)
+            if (lidTargetAngle !== 0) {
+                if (lidOpenProgress < 1) {
+                    lidOpenProgress = Math.min(lidOpenProgress + dt / 1.2, 1);
+                }
+                const p = lidOpenProgress;
+                const c1 = 1.70158, c3 = c1 + 1;
+                const eased = 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2);
+                lidCurrentAngle = lidTargetAngle * eased;
+            } else {
+                lidCurrentAngle = lerp(lidCurrentAngle, 0, 0.08);
+            }
+            lidPivot.rotation.x = lidCurrentAngle;
+
+            // Camera
+            camCurrentZ = lerp(camCurrentZ, camTargetZ, 0.03);
+            camCurrentY = lerp(camCurrentY, camTargetY, 0.03);
+            camera.position.z = camCurrentZ;
+            camera.position.y = camCurrentY;
+            camera.lookAt(0, 0, 0);
+
+            // Glow
+            glowCurrent = lerp(glowCurrent, glowTarget, 0.05);
+            glowUniforms.uOpacity.value = glowCurrent;
+            glowUniforms.uTime.value = elapsed;
+            glowPlane.scale.setScalar(1 + glowCurrent * 0.5);
+            glowLight.intensity = glowCurrent * 4;
+            mainLight.intensity = 1.2 + glowCurrent * 2;
+            updateFlyingCard(dt);
+
+            // During done state, dim glow
+            if (state === 'done' || state === 'card') {
+                glowTarget = lerp(glowTarget, 0, 0.12);
+            }
+
+            /* --- Background particles --- */
+            const bgPosArr = bgParticlesGeo.attributes.position.array;
+            for (let i = 0; i < BG_PARTICLES; i++) {
+                const sp = bgParticleSpeeds[i];
+                bgPosArr[i * 3] += sp.vx + Math.sin(elapsed * 0.5 + sp.phase) * 0.001;
+                bgPosArr[i * 3 + 1] += sp.vy;
+                if (bgPosArr[i * 3 + 1] > 7) {
+                    bgPosArr[i * 3 + 1] = -7;
+                    bgPosArr[i * 3] = (Math.random() - 0.5) * 20;
+                }
+            }
+            bgParticlesGeo.attributes.position.needsUpdate = true;
+
+            /* --- Ring particles --- */
+            if (ringActive) {
+                ringAngle += dt * 2.0;
+                ringMat.opacity = Math.min(ringMat.opacity + dt * 0.5, 0.6);
+                const rp = ringGeo.attributes.position.array;
+                for (let i = 0; i < RING_COUNT; i++) {
+                    const a = (i / RING_COUNT) * Math.PI * 2 + ringAngle;
+                    const r = 1.8 + Math.sin(a * 3 + elapsed * 2) * 0.2;
+                    rp[i * 3] = Math.cos(a) * r;
+                    rp[i * 3 + 1] = -0.3 + Math.sin(a * 5 + elapsed) * 0.15;
+                    rp[i * 3 + 2] = Math.sin(a) * r;
+                }
+                ringGeo.attributes.position.needsUpdate = true;
+            }
+
+            /* --- Burst particles --- */
+            if (burstActive) {
+                let allDead = true;
+                for (let i = 0; i < BURST_COUNT; i++) {
+                    const v = burstVel[i];
+                    if (v.life > 0) {
+                        allDead = false;
+                        burstPos[i * 3] += v.vx;
+                        burstPos[i * 3 + 1] += v.vy;
+                        burstPos[i * 3 + 2] += v.vz;
+                        v.vy -= 0.0015;
+                        v.vx *= 0.995;
+                        v.vz *= 0.995;
+                        v.life -= v.decay;
+                    }
+                }
+                burstGeo.attributes.position.needsUpdate = true;
+                burstMat.opacity = Math.max(0, burstMat.opacity - dt * 1.1);
+                if (allDead) {
+                    burstActive = false;
+                    burstMat.opacity = 0;
+                }
+            }
+
+            /* --- Subtle camera sway --- */
+            if (state === 'idle') {
+                camera.position.x = lerp(camera.position.x, Math.sin(elapsed * 0.3) * 0.1, 0.03);
+            } else if (state === 'opening' || state === 'card') {
+                camera.position.x = lerp(camera.position.x, 0, 0.05);
+                envelopeGroup.position.x = lerp(envelopeGroup.position.x, 0, 0.05);
+            }
+
+            renderer.render(scene3d, camera);
+        }
+        animate();
+
+        /* ============ Window Resize ============ */
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+
+</html>

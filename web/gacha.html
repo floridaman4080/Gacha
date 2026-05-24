@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>神秘信封 · 抽卡</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        /* ============ Reset & Base ============ */
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg-deep: #080818;
+            --bg-mid: #0e0e2a;
+            --gold-bright: #ffd700;
+            --gold-warm: #f0a830;
+            --gold-dim: #b8860b;
+            --indigo: #4a3f8a;
+            --indigo-light: #6e5cbf;
+            --violet-glow: #8a6fdf;
+            --text-primary: #f0eae0;
+            --text-secondary: #a8a0c0;
+            --envelope-body: #c4956a;
+            --envelope-dark: #a07050;
+            --envelope-lid: #d4a878;
+            --envelope-inner: #2a1810;
+            --card-normal-bg: linear-gradient(145deg, #1a1840, #2a2060, #1a1840);
+            --card-rare-bg: linear-gradient(145deg, #2a1a00, #3a2800, #2a1a00);
+            --radius-card: 12px;
+            --radius-btn: 8px;
+            --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
+        }
+
+        html, body {
+            width: 100%; height: 100%;
+            overflow: hidden;
+            font-family: var(--font-display);
+            background: var(--bg-deep);
+            color: var(--text-primary);
+        }
+
+        /* ============ Starfield Canvas ============ */
+        #starfield {
+            position: fixed; inset: 0;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        /* ============ Main Scene ============ */
+        .scene {
+            position: relative;
+            z-index: 1;
+            width: 100%; height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            perspective: 1200px;
+            overflow: hidden;
+        }
+
+        /* Background vignette */
+        .scene::before {
+            content: '';
+            position: absolute; inset: 0;
+            background: radial-gradient(ellipse at 50% 50%, transparent 30%, var(--bg-deep) 80%);
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        /* ============ Envelope Container ============ */
+        .envelope-wrapper {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transition: transform 1.2s cubic-bezier(0.22, 1, 0.36, 1),
+                        filter 0.6s ease;
+        }
+
+        /* Phase: zoom in */
+        .envelope-wrapper.phase-zoom {
+            transform: scale(1.35) translateY(-20px);
+        }
+
+        /* Phase: fade out envelope */
+        .envelope-wrapper.phase-hide {
+            transform: scale(1.5) translateY(-30px);
+            opacity: 0;
+            transition: transform 0.8s cubic-bezier(0.22, 1, 0.36, 1),
+                        opacity 0.6s ease 0.2s;
+        }
+
+        /* ============ Envelope ============ */
+        .envelope {
+            position: relative;
+            width: clamp(200px, 55vw, 320px);
+            height: clamp(150px, 40vw, 230px);
+            animation: envelopeFloat 4s ease-in-out infinite;
+            transform-style: preserve-3d;
+        }
+
+        @keyframes envelopeFloat {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-12px); }
+        }
+
+        .envelope.no-float {
+            animation: none;
+        }
+
+        /* Envelope body */
+        .envelope-body {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(170deg, var(--envelope-lid) 0%, var(--envelope-body) 40%, var(--envelope-dark) 100%);
+            border-radius: 6px 6px 10px 10px;
+            box-shadow:
+                0 8px 32px rgba(0,0,0,0.5),
+                0 2px 8px rgba(0,0,0,0.3),
+                inset 0 -20px 40px rgba(0,0,0,0.15);
+            overflow: hidden;
+        }
+
+        /* Envelope texture lines */
+        .envelope-body::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: repeating-linear-gradient(
+                90deg,
+                transparent,
+                transparent 18px,
+                rgba(255,255,255,0.03) 18px,
+                rgba(255,255,255,0.03) 19px
+            );
+            pointer-events: none;
+        }
+
+        /* Inner dark area visible when lid opens */
+        .envelope-inner {
+            position: absolute;
+            top: 0; left: 4%; right: 4%;
+            height: 55%;
+            background: var(--envelope-inner);
+            border-radius: 4px 4px 0 0;
+            z-index: -1;
+        }
+
+        /* Envelope triangle flap decoration */
+        .envelope-flap-deco {
+            position: absolute;
+            bottom: 0; left: 0; right: 0;
+            height: 65%;
+            clip-path: polygon(0 100%, 50% 20%, 100% 100%);
+            background: linear-gradient(to bottom, rgba(0,0,0,0.08), transparent);
+            pointer-events: none;
+        }
+
+        /* Seal / wax stamp */
+        .envelope-seal {
+            position: absolute;
+            top: -14px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 40px; height: 40px;
+            background: radial-gradient(circle, #e74040 0%, #b02020 60%, #801818 100%);
+            border-radius: 50%;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4), inset 0 -2px 4px rgba(0,0,0,0.3);
+            z-index: 10;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px;
+            color: rgba(255,255,255,0.8);
+            font-weight: 800;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+            transition: opacity 0.4s ease, transform 0.4s ease;
+        }
+
+        .envelope-seal::after {
+            content: '符';
+        }
+
+        /* ============ Envelope Lid (3D flip) ============ */
+        .envelope-lid {
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 58%;
+            transform-origin: top center;
+            transform-style: preserve-3d;
+            z-index: 5;
+            transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .envelope-lid-face {
+            position: absolute;
+            inset: 0;
+            clip-path: polygon(0 0, 50% 95%, 100% 0);
+            backface-visibility: hidden;
+        }
+
+        .envelope-lid-front {
+            background: linear-gradient(180deg, var(--envelope-lid), var(--envelope-body));
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+
+        .envelope-lid-back {
+            background: var(--envelope-inner);
+            transform: rotateX(180deg);
+        }
+
+        /* Lid open state */
+        .envelope.open .envelope-lid {
+            transform: rotateX(-180deg);
+        }
+
+        .envelope.open .envelope-seal {
+            opacity: 0;
+            transform: translateX(-50%) scale(0.5);
+        }
+
+        /* ============ Glow Burst ============ */
+        .glow-burst {
+            position: absolute;
+            top: 20%;
+            left: 50%;
+            width: 0; height: 0;
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 3;
+            opacity: 0;
+        }
+
+        .glow-burst.active-normal {
+            animation: glowBurstNormal 1.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+
+        .glow-burst.active-rare {
+            animation: glowBurstRare 1.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+
+        @keyframes glowBurstNormal {
+            0% { width: 0; height: 0; opacity: 0;
+                 box-shadow: 0 0 20px 10px rgba(110, 92, 191, 0.0); }
+            50% { width: 300px; height: 300px; opacity: 1;
+                  box-shadow: 0 0 80px 40px rgba(110, 92, 191, 0.6); }
+            100% { width: 600px; height: 600px; opacity: 0;
+                   box-shadow: 0 0 120px 60px rgba(110, 92, 191, 0.0); }
+        }
+
+        @keyframes glowBurstRare {
+            0% { width: 0; height: 0; opacity: 0;
+                 box-shadow: 0 0 30px 15px rgba(255, 215, 0, 0.0); }
+            40% { width: 350px; height: 350px; opacity: 1;
+                  box-shadow: 0 0 120px 60px rgba(255, 215, 0, 0.7),
+                              0 0 200px 100px rgba(240, 168, 48, 0.3); }
+            100% { width: 800px; height: 800px; opacity: 0;
+                   box-shadow: 0 0 160px 80px rgba(255, 215, 0, 0.0); }
+        }
+
+        /* ============ Light Rays ============ */
+        .light-rays {
+            position: absolute;
+            top: 20%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 0; height: 0;
+            z-index: 2;
+            pointer-events: none;
+            opacity: 0;
+        }
+
+        .light-ray {
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 3px;
+            height: 120px;
+            transform-origin: bottom center;
+            border-radius: 2px;
+            opacity: 0;
+        }
+
+        .light-rays.active .light-ray {
+            animation: rayShoot 1.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+
+        .light-rays.active {
+            opacity: 1;
+        }
+
+        @keyframes rayShoot {
+            0% { height: 0; opacity: 0; }
+            30% { opacity: 1; }
+            100% { height: 180px; opacity: 0; }
+        }
+
+        /* ============ Card ============ */
+        .card-container {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .card-container.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .card {
+            width: clamp(240px, 65vw, 340px);
+            min-height: 420px;
+            border-radius: var(--radius-card);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 32px 24px;
+            text-align: center;
+            transform: translateY(200px) scale(0.4) rotateY(180deg);
+            opacity: 0;
+            transition: none;
+        }
+
+        .card.reveal-normal {
+            animation: cardRevealNormal 1.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+
+        .card.reveal-rare {
+            animation: cardRevealRare 1.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+
+        @keyframes cardRevealNormal {
+            0% { transform: translateY(200px) scale(0.4) rotateY(180deg); opacity: 0; }
+            40% { opacity: 1; }
+            100% { transform: translateY(-20px) scale(1) rotateY(0deg); opacity: 1; }
+        }
+
+        @keyframes cardRevealRare {
+            0% { transform: translateY(200px) scale(0.3) rotateY(180deg); opacity: 0; }
+            30% { opacity: 1; }
+            60% { transform: translateY(-30px) scale(1.08) rotateY(10deg); }
+            80% { transform: translateY(-20px) scale(1.02) rotateY(-5deg); }
+            100% { transform: translateY(-20px) scale(1) rotateY(0deg); opacity: 1; }
+        }
+
+        /* Normal card style */
+        .card.normal {
+            background: var(--card-normal-bg);
+            border: 1.5px solid rgba(110, 92, 191, 0.4);
+            box-shadow:
+                0 0 40px rgba(110, 92, 191, 0.2),
+                0 20px 60px rgba(0, 0, 0, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        }
+
+        /* Rare card style */
+        .card.rare {
+            background: var(--card-rare-bg);
+            border: 2px solid rgba(255, 215, 0, 0.5);
+            box-shadow:
+                0 0 60px rgba(255, 215, 0, 0.3),
+                0 0 120px rgba(240, 168, 48, 0.15),
+                0 20px 60px rgba(0, 0, 0, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.12);
+        }
+
+        .card.rare .card-inner-glow {
+            position: absolute;
+            inset: 0;
+            border-radius: var(--radius-card);
+            background: radial-gradient(ellipse at 50% 30%, rgba(255,215,0,0.1), transparent 70%);
+            pointer-events: none;
+        }
+
+        /* Shimmer animation for rare card */
+        .card.rare::before {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border-radius: var(--radius-card);
+            background: linear-gradient(
+                105deg,
+                transparent 20%,
+                rgba(255, 215, 0, 0.15) 45%,
+                rgba(255, 215, 0, 0.3) 50%,
+                rgba(255, 215, 0, 0.15) 55%,
+                transparent 80%
+            );
+            background-size: 200% 100%;
+            animation: shimmer 2.5s ease-in-out infinite;
+            z-index: 0;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        /* Card content */
+        .card-rarity {
+            position: relative;
+            z-index: 1;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            margin-bottom: 24px;
+            padding: 4px 16px;
+            border-radius: 20px;
+        }
+
+        .card.normal .card-rarity {
+            color: var(--indigo-light);
+            border: 1px solid rgba(110, 92, 191, 0.3);
+            background: rgba(110, 92, 191, 0.1);
+        }
+
+        .card.rare .card-rarity {
+            color: var(--gold-bright);
+            border: 1px solid rgba(255, 215, 0, 0.4);
+            background: rgba(255, 215, 0, 0.1);
+            text-shadow: 0 0 12px rgba(255, 215, 0, 0.5);
+        }
+
+        .card-symbol {
+            position: relative;
+            z-index: 1;
+            width: 100px; height: 100px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 48px;
+            margin-bottom: 28px;
+        }
+
+        .card.normal .card-symbol {
+            background: radial-gradient(circle, rgba(110, 92, 191, 0.2), transparent);
+            box-shadow: 0 0 30px rgba(110, 92, 191, 0.15);
+        }
+
+        .card.rare .card-symbol {
+            background: radial-gradient(circle, rgba(255, 215, 0, 0.2), transparent);
+            box-shadow: 0 0 40px rgba(255, 215, 0, 0.2);
+            animation: pulseGold 2s ease-in-out infinite;
+        }
+
+        @keyframes pulseGold {
+            0%, 100% { box-shadow: 0 0 40px rgba(255, 215, 0, 0.2); }
+            50% { box-shadow: 0 0 60px rgba(255, 215, 0, 0.35); }
+        }
+
+        .card-name {
+            position: relative;
+            z-index: 1;
+            font-size: clamp(22px, 5vw, 28px);
+            font-weight: 800;
+            margin-bottom: 8px;
+            line-height: 1.3;
+        }
+
+        .card.rare .card-name {
+            background: linear-gradient(135deg, var(--gold-bright), var(--gold-warm), var(--gold-bright));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.3));
+        }
+
+        .card-divider {
+            position: relative;
+            z-index: 1;
+            width: 60px;
+            height: 2px;
+            margin: 16px 0;
+            border-radius: 1px;
+        }
+
+        .card.normal .card-divider {
+            background: linear-gradient(90deg, transparent, var(--indigo-light), transparent);
+        }
+
+        .card.rare .card-divider {
+            background: linear-gradient(90deg, transparent, var(--gold-bright), transparent);
+            box-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
+        }
+
+        .card-desc {
+            position: relative;
+            z-index: 1;
+            font-size: 14px;
+            line-height: 1.7;
+            color: var(--text-secondary);
+            max-width: 260px;
+        }
+
+        .card.rare .card-desc {
+            color: rgba(255, 230, 180, 0.7);
+        }
+
+        /* ============ Buttons ============ */
+        .btn-draw {
+            position: relative;
+            z-index: 10;
+            margin-top: 40px;
+            padding: 14px 48px;
+            font-family: var(--font-display);
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            border: none;
+            border-radius: var(--radius-btn);
+            cursor: pointer;
+            color: var(--text-primary);
+            background: linear-gradient(135deg, var(--indigo), var(--indigo-light));
+            box-shadow:
+                0 4px 20px rgba(74, 63, 138, 0.4),
+                0 0 40px rgba(110, 92, 191, 0.15);
+            transition: transform 0.25s ease, box-shadow 0.25s ease, opacity 0.3s ease;
+            outline: none;
+        }
+
+        .btn-draw:hover:not(:disabled) {
+            transform: translateY(-2px) scale(1.03);
+            box-shadow:
+                0 6px 28px rgba(74, 63, 138, 0.5),
+                0 0 60px rgba(110, 92, 191, 0.25);
+        }
+
+        .btn-draw:active:not(:disabled) {
+            transform: translateY(1px) scale(0.98);
+        }
+
+        .btn-draw:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-draw.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .btn-reset {
+            position: relative;
+            z-index: 101;
+            margin-top: 24px;
+            padding: 12px 40px;
+            font-family: var(--font-display);
+            font-size: 16px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            border: 1.5px solid rgba(255, 255, 255, 0.15);
+            border-radius: var(--radius-btn);
+            cursor: pointer;
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.06);
+            backdrop-filter: blur(8px);
+            transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+            outline: none;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+
+        .btn-reset.visible {
+            animation: fadeUp 0.5s ease forwards;
+        }
+
+        .btn-reset:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.3);
+            transform: translateY(-1px);
+        }
+
+        @keyframes fadeUp {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ============ Backdrop blur overlay ============ */
+        .backdrop-blur {
+            position: fixed;
+            inset: 0;
+            z-index: 50;
+            background: rgba(8, 8, 24, 0.6);
+            backdrop-filter: blur(6px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.8s ease;
+        }
+
+        .backdrop-blur.active {
+            opacity: 1;
+        }
+
+        /* ============ Particle Burst ============ */
+        .particle-layer {
+            position: fixed;
+            inset: 0;
+            z-index: 99;
+            pointer-events: none;
+            overflow: hidden;
+        }
+
+        .particle {
+            position: absolute;
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        /* ============ Rare Screen Flash ============ */
+        .screen-flash {
+            position: fixed;
+            inset: 0;
+            z-index: 98;
+            pointer-events: none;
+            opacity: 0;
+        }
+
+        .screen-flash.active-normal {
+            animation: flashNormal 0.6s ease-out forwards;
+            background: radial-gradient(circle at 50% 45%, rgba(110, 92, 191, 0.3), transparent 70%);
+        }
+
+        .screen-flash.active-rare {
+            animation: flashRare 1s ease-out forwards;
+            background: radial-gradient(circle at 50% 45%, rgba(255, 215, 0, 0.4), transparent 70%);
+        }
+
+        @keyframes flashNormal {
+            0% { opacity: 0; }
+            20% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        @keyframes flashRare {
+            0% { opacity: 0; }
+            15% { opacity: 1; }
+            40% { opacity: 0.7; }
+            100% { opacity: 0; }
+        }
+
+        /* ============ Rare card shake ============ */
+        @keyframes shakeRare {
+            0%, 100% { transform: translateX(0); }
+            10% { transform: translateX(-4px); }
+            20% { transform: translateX(4px); }
+            30% { transform: translateX(-3px); }
+            40% { transform: translateX(3px); }
+            50% { transform: translateX(-2px); }
+            60% { transform: translateX(2px); }
+            70% { transform: translateX(-1px); }
+            80% { transform: translateX(1px); }
+        }
+
+        .scene.shake {
+            animation: shakeRare 0.6s ease-out;
+        }
+
+        /* ============ Title ============ */
+        .page-title {
+            position: absolute;
+            top: clamp(24px, 5vh, 48px);
+            z-index: 10;
+            font-size: clamp(14px, 3vw, 18px);
+            font-weight: 600;
+            letter-spacing: 6px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            opacity: 0.6;
+        }
+
+        /* ============ Responsive ============ */
+        @media (max-width: 480px) {
+            .envelope {
+                width: clamp(180px, 70vw, 280px);
+                height: clamp(130px, 50vw, 200px);
+            }
+            .card {
+                width: clamp(220px, 80vw, 300px);
+                min-height: 380px;
+                padding: 24px 20px;
+            }
+            .btn-draw { padding: 12px 36px; font-size: 16px; }
+            .btn-reset { padding: 10px 32px; font-size: 14px; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Starfield Background -->
+<canvas id="starfield"></canvas>
+
+<!-- Backdrop Blur Overlay -->
+<div class="backdrop-blur" id="backdropBlur"></div>
+
+<!-- Screen Flash -->
+<div class="screen-flash" id="screenFlash"></div>
+
+<!-- Particle Burst Layer -->
+<div class="particle-layer" id="particleLayer"></div>
+
+<!-- Main Scene -->
+<div class="scene" id="scene">
+    <div class="page-title">神秘信封</div>
+
+    <!-- Envelope -->
+    <div class="envelope-wrapper" id="envelopeWrapper">
+        <div class="envelope" id="envelope">
+            <!-- Inner dark (visible when lid opens) -->
+            <div class="envelope-inner"></div>
+
+            <!-- Glow burst -->
+            <div class="glow-burst" id="glowBurst"></div>
+
+            <!-- Light rays -->
+            <div class="light-rays" id="lightRays"></div>
+
+            <!-- Lid (3D flipping) -->
+            <div class="envelope-lid">
+                <div class="envelope-lid-face envelope-lid-front"></div>
+                <div class="envelope-lid-face envelope-lid-back"></div>
+            </div>
+
+            <!-- Body -->
+            <div class="envelope-body">
+                <div class="envelope-flap-deco"></div>
+            </div>
+
+            <!-- Wax seal -->
+            <div class="envelope-seal"></div>
+        </div>
+
+        <!-- Draw Button -->
+        <button class="btn-draw" id="btnDraw">抽 卡</button>
+    </div>
+</div>
+
+<!-- Card Result -->
+<div class="card-container" id="cardContainer">
+    <div style="display:flex;flex-direction:column;align-items:center;">
+        <div class="card" id="card">
+            <div class="card-inner-glow"></div>
+            <div class="card-rarity" id="cardRarity"></div>
+            <div class="card-symbol" id="cardSymbol"></div>
+            <div class="card-name" id="cardName"></div>
+            <div class="card-divider"></div>
+            <div class="card-desc" id="cardDesc"></div>
+        </div>
+        <button class="btn-reset" id="btnReset">再抽一次</button>
+    </div>
+</div>
+
+<script>
+/* ============ Card Pool ============ */
+const CARD_POOL = [
+    { name: '诸事皆顺符', rarity: 'normal', symbol: '☯',
+      desc: '万事和合，顺风顺水。持此符者，诸般阻碍自行化解。' },
+    { name: '退散戾气符', rarity: 'normal', symbol: '🛡',
+      desc: '驱散周身戾气，远离纷争口角，心境自然平和。' },
+    { name: '灵光护体符', rarity: 'normal', symbol: '✦',
+      desc: '灵光环绕，护佑身心。灵感涌动，思路清明。' },
+    { name: '防窥结界符', rarity: 'normal', symbol: '🔮',
+      desc: '结界守护，隐私无忧。旁人窥探皆被隔绝。' },
+    { name: '隐身符',     rarity: 'normal', symbol: '👻',
+      desc: '隐匿身形，来去自如。低调行事，不惹尘埃。' },
+    { name: '明辨符',     rarity: 'normal', symbol: '👁',
+      desc: '目光如炬，洞察真伪。一切迷障在眼前无所遁形。' },
+    { name: '镀金符',     rarity: 'rare',   symbol: '👑',
+      desc: '万中无一的至尊符咒。持此符者，气运加身，诸事镀金，光芒万丈。' },
+];
+
+/* 概率：稀有卡 5%，普通卡平分 95% */
+const RARE_CHANCE = 0.05;
+
+function drawCard() {
+    const roll = Math.random();
+    if (roll < RARE_CHANCE) {
+        return CARD_POOL.find(c => c.rarity === 'rare');
+    }
+    const normals = CARD_POOL.filter(c => c.rarity === 'normal');
+    return normals[Math.floor(Math.random() * normals.length)];
+}
+
+/* ============ DOM Refs ============ */
+const scene          = document.getElementById('scene');
+const envelope       = document.getElementById('envelope');
+const envelopeWrap   = document.getElementById('envelopeWrapper');
+const btnDraw        = document.getElementById('btnDraw');
+const btnReset       = document.getElementById('btnReset');
+const glowBurst      = document.getElementById('glowBurst');
+const lightRays      = document.getElementById('lightRays');
+const backdropBlur   = document.getElementById('backdropBlur');
+const screenFlash    = document.getElementById('screenFlash');
+const particleLayer  = document.getElementById('particleLayer');
+const cardContainer  = document.getElementById('cardContainer');
+const card           = document.getElementById('card');
+const cardRarity     = document.getElementById('cardRarity');
+const cardSymbol     = document.getElementById('cardSymbol');
+const cardName       = document.getElementById('cardName');
+const cardDesc       = document.getElementById('cardDesc');
+
+/* ============ Light Rays Setup ============ */
+(function createRays() {
+    const count = 16;
+    for (let i = 0; i < count; i++) {
+        const ray = document.createElement('div');
+        ray.className = 'light-ray';
+        ray.style.transform = `rotate(${(360 / count) * i}deg)`;
+        ray.style.animationDelay = `${Math.random() * 0.3}s`;
+        lightRays.appendChild(ray);
+    }
+})();
+
+/* ============ Particle Burst ============ */
+function spawnParticles(isRare) {
+    const count = isRare ? 50 : 25;
+    const color = isRare
+        ? ['#ffd700', '#f0a830', '#ffe066', '#fff']
+        : ['#6e5cbf', '#8a6fdf', '#a89cef', '#fff'];
+
+    for (let i = 0; i < count; i++) {
+        const p = document.createElement('div');
+        p.className = 'particle';
+        const size = Math.random() * 6 + 2;
+        const x = window.innerWidth / 2;
+        const y = window.innerHeight * 0.42;
+        const angle = Math.random() * Math.PI * 2;
+        const dist = Math.random() * (isRare ? 350 : 220) + 80;
+        const dx = Math.cos(angle) * dist;
+        const dy = Math.sin(angle) * dist - Math.random() * 100;
+        const dur = Math.random() * 1000 + 800;
+        const c = color[Math.floor(Math.random() * color.length)];
+
+        p.style.cssText = `
+            width:${size}px; height:${size}px;
+            left:${x}px; top:${y}px;
+            background:${c};
+            box-shadow: 0 0 ${size * 2}px ${c};
+            opacity:1;
+            transition: transform ${dur}ms cubic-bezier(0.22,1,0.36,1),
+                        opacity ${dur}ms ease;
+        `;
+        particleLayer.appendChild(p);
+
+        requestAnimationFrame(() => {
+            p.style.transform = `translate(${dx}px, ${dy}px)`;
+            p.style.opacity = '0';
+        });
+
+        setTimeout(() => p.remove(), dur + 100);
+    }
+}
+
+/* ============ Starfield ============ */
+(function initStarfield() {
+    const canvas = document.getElementById('starfield');
+    const ctx = canvas.getContext('2d');
+    let stars = [];
+    const STAR_COUNT = 120;
+
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+
+    function createStars() {
+        stars = [];
+        for (let i = 0; i < STAR_COUNT; i++) {
+            stars.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                r: Math.random() * 1.5 + 0.3,
+                alpha: Math.random() * 0.6 + 0.2,
+                speed: Math.random() * 0.008 + 0.003,
+                phase: Math.random() * Math.PI * 2,
+            });
+        }
+    }
+
+    function draw(t) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        for (const s of stars) {
+            const a = s.alpha * (0.5 + 0.5 * Math.sin(t * s.speed + s.phase));
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(220, 215, 240, ${a})`;
+            ctx.fill();
+        }
+        requestAnimationFrame(draw);
+    }
+
+    resize();
+    createStars();
+    requestAnimationFrame(draw);
+    window.addEventListener('resize', () => { resize(); createStars(); });
+})();
+
+/* ============ Animation Sequence ============ */
+let isAnimating = false;
+
+function setRayColors(isRare) {
+    const c = isRare ? 'rgba(255,215,0,0.6)' : 'rgba(138,111,223,0.5)';
+    lightRays.querySelectorAll('.light-ray').forEach(r => {
+        r.style.background = c;
+    });
+}
+
+btnDraw.addEventListener('click', () => {
+    if (isAnimating) return;
+    isAnimating = true;
+    btnDraw.disabled = true;
+
+    /* 1. Draw result */
+    const result = drawCard();
+    const isRare = result.rarity === 'rare';
+
+    /* 2. Stop float, open lid */
+    envelope.classList.add('no-float', 'open');
+
+    /* 3. After lid opens — glow + rays */
+    setTimeout(() => {
+        setRayColors(isRare);
+        glowBurst.className = 'glow-burst ' + (isRare ? 'active-rare' : 'active-normal');
+        lightRays.classList.add('active');
+    }, 500);
+
+    /* 4. Screen flash + particles */
+    setTimeout(() => {
+        screenFlash.className = 'screen-flash ' + (isRare ? 'active-rare' : 'active-normal');
+        spawnParticles(isRare);
+        if (isRare) scene.classList.add('shake');
+    }, 900);
+
+    /* 5. Zoom in envelope */
+    setTimeout(() => {
+        envelopeWrap.classList.add('phase-zoom');
+        backdropBlur.classList.add('active');
+    }, 1100);
+
+    /* 6. Hide envelope, show card */
+    setTimeout(() => {
+        envelopeWrap.classList.add('phase-hide');
+        btnDraw.classList.add('hidden');
+    }, 1800);
+
+    setTimeout(() => {
+        /* Populate card */
+        cardRarity.textContent = isRare ? '稀 有' : '普 通';
+        cardSymbol.textContent = result.symbol;
+        cardName.textContent = result.name;
+        cardDesc.textContent = result.desc;
+        card.className = 'card ' + result.rarity;
+
+        cardContainer.classList.add('visible');
+
+        /* Trigger reveal animation */
+        requestAnimationFrame(() => {
+            card.classList.add(isRare ? 'reveal-rare' : 'reveal-normal');
+        });
+
+        /* Extra particles for rare */
+        if (isRare) {
+            setTimeout(() => spawnParticles(true), 300);
+        }
+
+        /* Show reset button */
+        setTimeout(() => btnReset.classList.add('visible'), 600);
+    }, 2400);
+});
+
+/* ============ Reset ============ */
+btnReset.addEventListener('click', () => {
+    /* Fade out card */
+    cardContainer.classList.remove('visible');
+    card.className = 'card';
+    btnReset.classList.remove('visible');
+    btnReset.style.opacity = '0';
+    btnReset.style.transform = 'translateY(20px)';
+
+    /* Reset envelope */
+    envelope.classList.remove('open', 'no-float');
+    envelopeWrap.classList.remove('phase-zoom', 'phase-hide');
+    envelopeWrap.style.opacity = '';
+    btnDraw.classList.remove('hidden');
+    btnDraw.disabled = false;
+
+    /* Reset effects */
+    glowBurst.className = 'glow-burst';
+    lightRays.classList.remove('active');
+    backdropBlur.classList.remove('active');
+    screenFlash.className = 'screen-flash';
+    scene.classList.remove('shake');
+
+    /* Reset inline styles on reset button */
+    setTimeout(() => {
+        btnReset.style.opacity = '';
+        btnReset.style.transform = '';
+    }, 50);
+
+    isAnimating = false;
+});
+</script>
+</body>
+</html>

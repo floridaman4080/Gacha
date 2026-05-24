@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>信封抽卡</title>
+    <style>
+        /* ==========================================
+           1. 基础设定 & 变量 (Design System)
+           - 严格禁止蓝紫色系
+           - 主色调：暗金、深色梦幻、暖光
+           ========================================== */
+        :root {
+            --bg-color: #0a0a0a;
+            --env-dark: #1f1b18;   /* 信封底色：深暖灰 */
+            --env-light: #2e2823;  /* 信封翻盖：略亮 */
+            --env-bottom: #241f1b; /* 信封下盖：中等深 */
+            --env-top: #362f2a;    /* 信封顶盖：高光面 */
+            --gold: #d4af37;
+            --gold-bright: #ffd700;
+            --seal-red: #7f1d1d;   /* 火漆印：暗红 */
+            
+            --font-serif: "Noto Serif SC", "Songti SC", "STSong", serif;
+            --font-sans: system-ui, -apple-system, sans-serif;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-color);
+            background-image: radial-gradient(circle at 50% 40%, #1a1814 0%, #000000 85%);
+            overflow: hidden;
+            font-family: var(--font-sans);
+            color: #fff;
+            perspective: 1200px; /* 提供镜头景深 */
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* 隐藏类 */
+        .hidden {
+            display: none !important;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* ==========================================
+           2. 粒子与背景环境
+           ========================================== */
+        #particles {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .particle {
+            position: absolute;
+            background: radial-gradient(circle, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0) 70%);
+            border-radius: 50%;
+            opacity: 0;
+            animation: rise infinite linear;
+        }
+
+        @keyframes rise {
+            0% { transform: translateY(110vh) scale(0); opacity: 0; }
+            20% { opacity: 0.6; }
+            80% { opacity: 0.3; }
+            100% { transform: translateY(-10vh) scale(1); opacity: 0; }
+        }
+
+        /* ==========================================
+           3. 场景与镜头系统 (Camera)
+           ========================================== */
+        #scene {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            z-index: 10;
+        }
+
+        #camera {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transform-style: preserve-3d;
+            transition: transform 1.5s cubic-bezier(0.25, 1, 0.5, 1);
+            will-change: transform;
+        }
+
+        /* 镜头推进效果 */
+        .camera-zoom {
+            transform: scale(1.15) translateY(4vh) translateZ(60px) rotateX(4deg);
+        }
+
+        /* 地面投影，增强浮动立体感 */
+        #floor-shadow {
+            position: absolute;
+            top: 50%; left: 50%;
+            margin-top: 110px; /* 匹配信封底部 */
+            transform: translate(-50%, -50%) rotateX(75deg);
+            width: 250px;
+            height: 80px;
+            background: radial-gradient(ellipse at center, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 70%);
+            z-index: 0;
+            animation: shadow-pulse 4s ease-in-out infinite;
+            pointer-events: none;
+        }
+
+        @keyframes shadow-pulse {
+            0%, 100% { transform: translate(-50%, -50%) rotateX(75deg) scale(1); opacity: 0.8; }
+            50% { transform: translate(-50%, -50%) rotateX(75deg) scale(0.85); opacity: 0.4; }
+        }
+
+        /* ==========================================
+           4. 信封主体与动画
+           ========================================== */
+        .envelope-wrapper {
+            position: relative;
+            width: 300px;
+            height: 200px;
+            transform-style: preserve-3d;
+            animation: float 4s ease-in-out infinite;
+            z-index: 20;
+            will-change: transform;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-12px); }
+        }
+
+        .envelope-body {
+            position: absolute;
+            width: 100%; height: 100%;
+            background: var(--env-dark);
+            border-radius: 4px;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(255,255,255,0.03);
+            transform-style: preserve-3d;
+        }
+
+        .envelope-inside {
+            position: absolute;
+            width: 98%; height: 96%;
+            bottom: 2%; left: 1%;
+            background: #111;
+            box-shadow: inset 0 10px 20px rgba(0,0,0,0.9);
+            border-radius: 2px;
+            z-index: 1;
+        }
+
+        /* 信封内部光效 */
+        .envelope-light {
+            position: absolute;
+            top: 30%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 0px; height: 0px;
+            background: var(--gold);
+            border-radius: 50%;
+            z-index: 2;
+            opacity: 0;
+            transition: all 1s cubic-bezier(0.2, 0.8, 0.2, 1);
+            pointer-events: none;
+        }
+
+        .light-active {
+            opacity: 1;
+            box-shadow: 0 0 150px 80px var(--gold);
+            animation: pulse-glow 2s infinite alternate ease-in-out;
+        }
+
+        .light-rare {
+            background: var(--gold-bright);
+            box-shadow: 0 0 200px 100px var(--gold-bright), 0 0 60px 20px #fff;
+        }
+
+        @keyframes pulse-glow {
+            0% { transform: translate(-50%, -50%) scale(1); opacity: 0.8; }
+            100% { transform: translate(-50%, -50%) scale(1.05); opacity: 1; }
+        }
+
+        /* 外部翻盖组合 (利用 border 绘制三角形) */
+        .envelope-front {
+            position: absolute;
+            width: 100%; height: 100%;
+            top: 0; left: 0;
+            z-index: 20;
+            pointer-events: none;
+            overflow: hidden;
+            border-radius: 0 0 4px 4px;
+        }
+
+        .env-flap-left, .env-flap-right, .env-flap-bottom {
+            position: absolute;
+            width: 0; height: 0;
+        }
+
+        .env-flap-left {
+            border-top: 100px solid transparent;
+            border-bottom: 100px solid transparent;
+            border-left: 150px solid var(--env-light);
+            left: 0; top: 0;
+            filter: drop-shadow(3px 0 4px rgba(0,0,0,0.3));
+        }
+
+        .env-flap-right {
+            border-top: 100px solid transparent;
+            border-bottom: 100px solid transparent;
+            border-right: 150px solid var(--env-light);
+            right: 0; top: 0;
+            filter: drop-shadow(-3px 0 4px rgba(0,0,0,0.3));
+        }
+
+        .env-flap-bottom {
+            border-left: 150px solid transparent;
+            border-right: 150px solid transparent;
+            border-bottom: 110px solid var(--env-bottom);
+            left: 0; bottom: 0;
+            filter: drop-shadow(0 -4px 6px rgba(0,0,0,0.4));
+            z-index: 21;
+        }
+
+        /* 顶部活动翻盖 */
+        .envelope-flap-top {
+            position: absolute;
+            top: 0; left: 0;
+            width: 0; height: 0;
+            border-left: 150px solid transparent;
+            border-right: 150px solid transparent;
+            border-top: 115px solid var(--env-top);
+            transform-origin: top;
+            /* 开启时，延迟 z-index，让它转动一半后才落到卡牌后方 */
+            transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1), z-index 0s 0s;
+            z-index: 30;
+            filter: drop-shadow(0 5px 8px rgba(0,0,0,0.5));
+            transform-style: preserve-3d;
+        }
+
+        /* 开启信封状态 */
+        .is-open .envelope-flap-top {
+            transform: rotateX(180deg);
+            z-index: 10;
+            transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1), z-index 0s 0.25s;
+        }
+
+        /* 火漆印 */
+        .wax-seal {
+            position: absolute;
+            top: -20px; left: -20px; /* 居中于尖端 */
+            width: 40px; height: 40px;
+            background: radial-gradient(circle at 30% 30%, #a52a2a, var(--seal-red) 60%, #4a0404);
+            border-radius: 50%;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.6), inset 0 2px 4px rgba(255,255,255,0.2);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 0.4s ease;
+        }
+
+        .wax-seal::after {
+            content: '封';
+            color: rgba(255,255,255,0.8);
+            font-size: 16px;
+            font-family: var(--font-serif);
+            text-shadow: 0 -1px 1px rgba(0,0,0,0.5);
+        }
+
+        .is-open .wax-seal {
+            opacity: 0; /* 开启后隐去火漆印 */
+        }
+
+        /* ==========================================
+           5. 卡牌与抽卡逻辑样式
+           ========================================== */
+        .card-container {
+            position: absolute;
+            bottom: 5px;
+            left: 50%;
+            width: 200px;
+            height: 320px;
+            /* 初始状态潜伏在信封内 */
+            transform: translateX(-50%) translateY(20px) scale(0.5);
+            opacity: 0;
+            z-index: 15; /* 在信封内衬(1)和前盖(20)之间 */
+            perspective: 1000px;
+            transition: transform 1s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.5s ease;
+            pointer-events: none;
+        }
+
+        /* 弹出状态 */
+        .card-popped {
+            /* 向上滑出并放大 */
+            transform: translateX(-50%) translateY(-235px) scale(1.15);
+            opacity: 1;
+        }
+
+        /* 媒体查询：适配高度较小的屏幕，避免卡牌弹出后超边 */
+        @media (max-height: 700px) {
+            #scene { transform: scale(0.85); }
+        }
+        @media (max-height: 550px) {
+            #scene { transform: scale(0.7); }
+        }
+
+        .card {
+            width: 100%; height: 100%;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 1.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+            transform: rotateY(180deg); /* 初始背面朝上 */
+        }
+
+        .card-face {
+            position: absolute;
+            width: 100%; height: 100%;
+            backface-visibility: hidden;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            padding: 25px 15px;
+            box-sizing: border-box;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.5);
+        }
+
+        /* 卡背：神秘沉稳 */
+        .card-back {
+            background: linear-gradient(135deg, #1a1a1a, #0a0a0a);
+            border: 2px solid #333;
+            justify-content: center;
+        }
+        .card-back::before {
+            content: '';
+            position: absolute;
+            top: 10px; left: 10px; right: 10px; bottom: 10px;
+            border: 1px dashed rgba(255,255,255,0.1);
+            border-radius: 6px;
+        }
+        .card-back::after {
+            content: '敕';
+            font-size: 80px;
+            color: #222;
+            font-family: var(--font-serif);
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+        }
+
+        /* 卡面：默认普通卡 (羊皮纸/木纹质感) */
+        .card-front {
+            background: linear-gradient(135deg, #e6d5b8, #c8b48d);
+            transform: rotateY(180deg);
+            color: #2c1e0e;
+            border: 1px solid #a38c64;
+            overflow: hidden;
+        }
+        .card-front::before {
+            content: '';
+            position: absolute;
+            top: 8px; left: 8px; right: 8px; bottom: 8px;
+            border: 1px solid rgba(0,0,0,0.15);
+            border-radius: 6px;
+            pointer-events: none;
+        }
+
+        /* 稀有卡样式 (命运之冠) */
+        .card-rare .card-front {
+            background: linear-gradient(135deg, #1a1814, #080706);
+            box-shadow: 0 0 35px rgba(212, 175, 55, 0.9), inset 0 0 25px rgba(212, 175, 55, 0.3);
+            border: 1px solid var(--gold);
+            color: var(--gold-bright);
+        }
+        .card-rare .card-front::before {
+            border: 1px solid rgba(212, 175, 55, 0.5);
+        }
+
+        /* 稀有卡流光特效 */
+        .card-rare-fx {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(105deg, transparent 20%, rgba(212,175,55,0.5) 50%, transparent 80%);
+            background-size: 200% 200%;
+            mix-blend-mode: color-dodge;
+            animation: rare-shine 2.5s infinite linear;
+            pointer-events: none;
+        }
+        @keyframes rare-shine {
+            0% { background-position: 200% center; }
+            100% { background-position: -200% center; }
+        }
+
+        /* 卡牌文案排版 */
+        .card-rarity {
+            font-size: 13px;
+            letter-spacing: 2px;
+            font-weight: bold;
+            opacity: 0.8;
+            z-index: 2;
+        }
+        .card-rare .card-rarity {
+            color: var(--gold-bright);
+            text-shadow: 0 0 10px rgba(255, 204, 0, 0.6);
+        }
+
+        .card-name {
+            flex-grow: 1;
+            font-family: var(--font-serif);
+            font-size: 26px;
+            font-weight: bold;
+            writing-mode: vertical-rl;
+            text-orientation: upright;
+            letter-spacing: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+            z-index: 2;
+        }
+        .card-rare .card-name {
+            color: #fff;
+            text-shadow: 0 0 15px rgba(255,255,255,0.6), 0 0 25px var(--gold);
+        }
+
+        .card-desc {
+            font-size: 13px;
+            line-height: 1.4;
+            opacity: 0.85;
+            text-align: center;
+            z-index: 2;
+            word-break: break-word;
+            padding: 0 5px;
+        }
+
+        /* ==========================================
+           6. UI 图层与按钮
+           ========================================== */
+        #ui-layer {
+            position: absolute;
+            bottom: 8vh;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        .btn {
+            position: relative;
+            background: linear-gradient(135deg, var(--gold), #a68112);
+            color: #111;
+            border: 1px solid #f9d86b;
+            padding: 16px 50px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 30px;
+            cursor: pointer;
+            box-shadow: 0 6px 20px rgba(212, 175, 55, 0.4), inset 0 2px 0 rgba(255,255,255,0.3);
+            transition: all 0.3s ease;
+            font-family: var(--font-serif);
+            letter-spacing: 4px;
+            text-indent: 4px; /* 居中校准 */
+            overflow: hidden;
+            outline: none;
+        }
+
+        /* 按钮扫光动画 */
+        .btn::after {
+            content: '';
+            position: absolute;
+            top: -50%; left: -50%;
+            width: 200%; height: 200%;
+            background: linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.4) 50%, rgba(255,255,255,0) 100%);
+            transform: rotate(30deg) translateX(-100%);
+            animation: btn-shine 3s infinite;
+        }
+        @keyframes btn-shine {
+            0%, 20% { transform: rotate(30deg) translateX(-100%); }
+            40%, 100% { transform: rotate(30deg) translateX(100%); }
+        }
+
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(212, 175, 55, 0.6), inset 0 2px 0 rgba(255,255,255,0.5);
+        }
+
+        .btn:active:not(:disabled) {
+            transform: translateY(1px);
+            box-shadow: 0 2px 10px rgba(212, 175, 55, 0.4);
+        }
+
+        .btn:disabled {
+            filter: grayscale(100%);
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        .btn:disabled::after { display: none; }
+
+        /* 重置按钮 - 幽灵样式 */
+        #reset-btn {
+            background: rgba(0,0,0,0.6);
+            color: #fff;
+            border: 1px solid rgba(255,255,255,0.3);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        #reset-btn:hover {
+            background: rgba(255,255,255,0.1);
+        }
+
+        /* ==========================================
+           7. 屏幕震动 (稀有卡专属特效)
+           ========================================== */
+        @keyframes shake {
+            0%, 100% { transform: translate(0, 0); }
+            10% { transform: translate(-4px, -4px); }
+            20% { transform: translate(4px, -4px); }
+            30% { transform: translate(-4px, 4px); }
+            40% { transform: translate(4px, 4px); }
+            50% { transform: translate(-4px, -4px); }
+            60% { transform: translate(4px, -4px); }
+            70% { transform: translate(-4px, 4px); }
+            80% { transform: translate(4px, 4px); }
+            90% { transform: translate(-4px, -4px); }
+        }
+        .shake-active {
+            animation: shake 0.6s cubic-bezier(.36,.07,.19,.97) both;
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- 柔和星光/粒子层 -->
+    <div id="particles"></div>
+
+    <!-- 3D主场景 -->
+    <div id="scene">
+        <div id="camera">
+            
+            <!-- 独立于浮动的底部阴影 -->
+            <div id="floor-shadow"></div>
+
+            <!-- 信封包裹层 (浮动动画) -->
+            <div class="envelope-wrapper" id="envelope">
+                <div class="envelope-body">
+                    
+                    <!-- 信封内部黑洞 -->
+                    <div class="envelope-inside"></div>
+                    
+                    <!-- 光效中心点 -->
+                    <div class="envelope-light" id="env-light"></div>
+                    
+                    <!-- 卡牌容器 -->
+                    <div class="card-container" id="card-container">
+                        <div class="card" id="card">
+                            <!-- 卡牌背面 -->
+                            <div class="card-face card-back"></div>
+                            
+                            <!-- 卡牌正面 -->
+                            <div class="card-face card-front" id="card-front">
+                                <div class="card-rare-fx hidden" id="rare-fx"></div>
+                                <div class="card-rarity" id="card-rarity">普通</div>
+                                <div class="card-name" id="card-name">名称</div>
+                                <div class="card-desc" id="card-desc">描述</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 信封前遮挡盖 -->
+                    <div class="envelope-front">
+                        <div class="env-flap-left"></div>
+                        <div class="env-flap-right"></div>
+                        <div class="env-flap-bottom"></div>
+                    </div>
+                    
+                    <!-- 信封顶盖 (火漆印贴在顶盖上) -->
+                    <div class="envelope-flap-top">
+                        <div class="wax-seal"></div>
+                    </div>
+
+                </div>
+                
+                <!-- 稀有卡爆点粒子挂载区 -->
+                <div id="burst-particles"></div>
+            </div>
+            
+        </div>
+    </div>
+
+    <!-- UI交互层 -->
+    <div id="ui-layer">
+        <button class="btn" id="draw-btn">开始抽卡</button>
+        <button class="btn hidden" id="reset-btn">再抽一次</button>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            
+            // 1. 卡池与概率配置
+            const pool = [
+                { name: "诸事皆顺符", rarity: "普通", desc: "驱散阴霾，所愿皆得", type: "common" },
+                { name: "退散戾气符", rarity: "普通", desc: "净心平气，化解是非", type: "common" },
+                { name: "灵光护体符", rarity: "普通", desc: "万邪不侵，诸事皆宁", type: "common" },
+                { name: "防窥结界符", rarity: "普通", desc: "隔绝俗扰，守心如一", type: "common" },
+                { name: "隐身符",     rarity: "普通", desc: "敛藏锋芒，超然物外", type: "common" },
+                { name: "明辨符",     rarity: "普通", desc: "洞若观火，识破虚妄", type: "common" },
+                { name: "命运之冠",   rarity: "稀有 (镀金符)", desc: "逆转宿命，加冕为王", type: "rare" }
+            ];
+
+            // 抽卡核心逻辑 (5% 稀有, 95% 平分普通)
+            function drawCard() {
+                const r = Math.random();
+                if (r < 0.05) {
+                    return pool[6]; // 稀有卡 命运之冠
+                } else {
+                    return pool[Math.floor(Math.random() * 6)]; // 随机普通卡
+                }
+            }
+
+            // 2. DOM 节点引用
+            const drawBtn = document.getElementById('draw-btn');
+            const resetBtn = document.getElementById('reset-btn');
+            const envelope = document.getElementById('envelope');
+            const envLight = document.getElementById('env-light');
+            const camera = document.getElementById('camera');
+            const cardContainer = document.getElementById('card-container');
+            const card = document.getElementById('card');
+            
+            const rareFx = document.getElementById('rare-fx');
+            const elName = document.getElementById('card-name');
+            const elRarity = document.getElementById('card-rarity');
+            const elDesc = document.getElementById('card-desc');
+            const burstParticles = document.getElementById('burst-particles');
+
+            // 3. 背景环境粒子初始化
+            const particlesContainer = document.getElementById('particles');
+            const particleCount = window.innerWidth < 768 ? 25 : 45; // 移动端减少粒子提升性能
+            for (let i = 0; i < particleCount; i++) {
+                const p = document.createElement('div');
+                p.classList.add('particle');
+                p.style.left = Math.random() * 100 + '%';
+                const size = Math.random() * 3 + 1;
+                p.style.width = size + 'px';
+                p.style.height = size + 'px';
+                p.style.animationDuration = (Math.random() * 5 + 4) + 's';
+                p.style.animationDelay = (Math.random() * 5) + 's';
+                particlesContainer.appendChild(p);
+            }
+
+            // 生成稀有卡专属的爆发粒子特效
+            function createBurstParticles() {
+                burstParticles.innerHTML = ''; // 清空
+                burstParticles.style.position = 'absolute';
+                burstParticles.style.top = '40%'; 
+                burstParticles.style.left = '50%';
+                
+                for(let i = 0; i < 40; i++) {
+                    const p = document.createElement('div');
+                    p.style.position = 'absolute';
+                    p.style.width = '5px';
+                    p.style.height = '5px';
+                    p.style.background = '#ffd700';
+                    p.style.borderRadius = '50%';
+                    p.style.boxShadow = '0 0 10px #ffd700, 0 0 20px #fff';
+                    
+                    const angle = Math.random() * Math.PI * 2;
+                    const distance = Math.random() * 400 + 100;
+                    const tx = Math.cos(angle) * distance;
+                    const ty = Math.sin(angle) * distance;
+                    
+                    p.animate([
+                        { transform: 'translate(-50%, -50%) scale(1)', opacity: 1 },
+                        { transform: `translate(calc(-50% + ${tx}px), calc(-50% + ${ty}px)) scale(0)`, opacity: 0 }
+                    ], {
+                        duration: Math.random() * 1000 + 800,
+                        easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
+                        fill: 'forwards'
+                    });
+                    burstParticles.appendChild(p);
+                }
+            }
+
+            // 4. 交互流程编排
+            drawBtn.addEventListener('click', () => {
+                // 防抖与锁定状态
+                drawBtn.disabled = true;
+                drawBtn.classList.add('hidden');
+                
+                // 【阶段1】进行抽卡并装载数据
+                const result = drawCard();
+                
+                elName.textContent = result.name;
+                elRarity.textContent = result.rarity;
+                elDesc.textContent = result.desc;
+                
+                // 依据稀有度切换样式
+                if(result.type === 'rare') {
+                    cardContainer.classList.add('card-rare');
+                    rareFx.classList.remove('hidden');
+                    envLight.classList.add('light-rare');
+                } else {
+                    cardContainer.classList.remove('card-rare');
+                    rareFx.classList.add('hidden');
+                    envLight.classList.remove('light-rare');
+                }
+
+                // 【阶段2】信封翻盖打开
+                envelope.classList.add('is-open');
+                
+                // 【阶段3】光芒透出与镜头推进 (等待翻盖过半)
+                setTimeout(() => {
+                    envLight.classList.add('light-active');
+                    camera.classList.add('camera-zoom');
+                    
+                    // 稀有卡专属屏幕震动与爆发
+                    if(result.type === 'rare') {
+                        document.body.classList.add('shake-active');
+                        createBurstParticles();
+                    }
+                }, 600);
+
+                // 【阶段4】卡牌弹射出信封
+                setTimeout(() => {
+                    cardContainer.classList.add('card-popped');
+                }, 1200);
+
+                // 【阶段5】卡牌滞空并3D翻转展示正面
+                setTimeout(() => {
+                    card.style.transform = "rotateY(0deg)";
+                }, 2200);
+
+                // 【阶段6】展示完毕，提供重置操作
+                setTimeout(() => {
+                    resetBtn.classList.remove('hidden');
+                    document.body.classList.remove('shake-active'); // 确保震动类被移除
+                }, 3200);
+            });
+
+            // 5. 重置动画
+            resetBtn.addEventListener('click', () => {
+                resetBtn.classList.add('hidden');
+                
+                // 先翻回卡背
+                card.style.transform = "rotateY(180deg)";
+                
+                // 缩回卡牌、关闭光效、镜头退回、信封合拢
+                setTimeout(() => {
+                    cardContainer.classList.remove('card-popped');
+                    envLight.classList.remove('light-active');
+                    camera.classList.remove('camera-zoom');
+                    envelope.classList.remove('is-open');
+                    burstParticles.innerHTML = ''; // 清除爆发粒子
+                    
+                    // 等待合拢完毕后，恢复初始抽卡按钮
+                    setTimeout(() => {
+                        drawBtn.disabled = false;
+                        drawBtn.classList.remove('hidden');
+                    }, 1000);
+                }, 600);
+            });
+        });
+    </script>
+</body>
+</html>

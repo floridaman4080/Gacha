@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>信封抽卡仪式</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #110907;
+            background-image: 
+                radial-gradient(circle at 50% 30%, #2a110a 0%, #0d0604 70%),
+                url("data:image/svg+xml,%3Csvg width='200' height='200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='a'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23a)' opacity='0.06'/%3E%3C/svg%3E");
+            overflow: hidden;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            user-select: none;
+            color: #fff;
+        }
+
+        .viewport {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* 镜头缩放容器 */
+        .scene {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            perspective: 1000px;
+            transition: transform 1.5s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.4s ease;
+        }
+        .scene.zoomed {
+            transform: scale(1.15) translateY(40px);
+        }
+
+        /* 呼吸浮动 */
+        .envelope-wrapper {
+            position: relative;
+            width: 300px;
+            height: 180px;
+            animation: float 4s ease-in-out infinite;
+            filter: drop-shadow(0 15px 25px rgba(0,0,0,0.8));
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-15px); }
+        }
+
+        /* ================= 信封结构 ================= */
+        .env-bg, .env-front, .flap, .light-burst, .card {
+            position: absolute;
+        }
+        
+        .env-bg {
+            inset: 0;
+            z-index: 0;
+        }
+
+        .light-burst {
+            inset: -60px;
+            z-index: 2;
+            background: radial-gradient(circle, rgba(255,215,0,0.8) 0%, rgba(255,140,0,0.3) 40%, transparent 70%);
+            opacity: 0;
+            transform: scale(0.5);
+            transition: all 1s ease-out;
+            pointer-events: none;
+            mix-blend-mode: screen;
+        }
+        .light-burst.active {
+            opacity: 1;
+            transform: scale(1.5);
+        }
+        .light-burst.rare-burst {
+            background: radial-gradient(circle, #ffffff 0%, #ffdf00 20%, #ff8c00 50%, transparent 75%);
+            transform: scale(3.5);
+            filter: brightness(1.5);
+        }
+
+        .env-front {
+            inset: 0;
+            z-index: 4;
+            pointer-events: none;
+        }
+
+        /* 信封上盖：巧妙利用 z-index 延迟，实现视觉翻转前后的遮挡穿透 */
+        .flap {
+            top: 0; left: 0;
+            z-index: 5;
+            transform-origin: top;
+            transform: rotateX(0deg);
+            transition: transform 0.6s ease-in-out, z-index 0s 0.3s;
+        }
+        .envelope.open .flap {
+            transform: rotateX(180deg);
+            z-index: 1;
+            transition: transform 0.6s ease-in-out, z-index 0s 0.3s;
+        }
+
+        /* ================= 卡牌结构 ================= */
+        .card {
+            width: 140px;
+            height: 240px;
+            left: 50%;
+            top: 50%;
+            margin-left: -70px;
+            margin-top: -120px;
+            z-index: 3;
+            transform: translateY(0px) scale(0.7);
+            perspective: 1000px;
+            filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0));
+            transition: transform 0s, filter 1s; /* 重置时瞬间归位 */
+        }
+        .card.pop-out {
+            transform: translateY(-120px) scale(1.1);
+            filter: drop-shadow(0 0 25px rgba(255, 215, 0, 0.6));
+            transition: transform 1.5s cubic-bezier(0.2, 0.8, 0.2, 1), filter 1s;
+        }
+        .card.pop-out.rare {
+            filter: drop-shadow(0 0 45px rgba(255, 223, 0, 1));
+        }
+
+        .card-inner {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0s; 
+        }
+        .card.pop-out .card-inner {
+            transform: rotateY(180deg);
+            transition: transform 1s 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .card-front, .card-back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        /* 符箓背面（未翻开时） */
+        .card-front {
+            background: #e3bc86;
+            border: 2px solid #a37233;
+            box-shadow: inset 0 0 20px rgba(138, 54, 15, 0.4);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .card-front::after {
+            content: '';
+            position: absolute;
+            inset: 10px;
+            border: 1px solid #c49655;
+            background-image: 
+                linear-gradient(45deg, transparent 48%, #c49655 49%, #c49655 51%, transparent 52%),
+                linear-gradient(-45deg, transparent 48%, #c49655 49%, #c49655 51%, transparent 52%);
+            background-size: 20px 20px;
+            opacity: 0.5;
+        }
+
+        /* 符箓正面（抽卡结果） */
+        .card-back {
+            transform: rotateY(180deg);
+            background: #e3bc86;
+            border: 4px solid #821717;
+            box-shadow: inset 0 0 30px rgba(130, 23, 23, 0.2);
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .card-border {
+            position: absolute;
+            inset: 8px;
+            border: 1px solid #821717;
+            pointer-events: none;
+        }
+        
+        /* 稀有卡材质覆盖 */
+        .card.rare .card-back {
+            background: linear-gradient(135deg, #2b2218 0%, #1a1510 100%);
+            border-color: #ffd700;
+            box-shadow: inset 0 0 40px rgba(255, 215, 0, 0.3), 0 0 20px rgba(255, 215, 0, 0.3);
+        }
+        .card.rare .card-border { border-color: rgba(255, 215, 0, 0.5); }
+
+        .card-rarity {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            font-size: 12px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: rgba(130, 23, 23, 0.1);
+            color: #821717;
+            font-weight: bold;
+        }
+        .card.rare .card-rarity {
+            background: rgba(255, 215, 0, 0.2);
+            color: #ffd700;
+        }
+
+        .talisman-content {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+        }
+        .text-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-left: 12px;
+        }
+        .card-title {
+            writing-mode: vertical-rl;
+            text-orientation: upright;
+            font-family: "STKaiti", "KaiTi", "楷体", serif;
+            font-size: 24px;
+            font-weight: 900;
+            letter-spacing: 6px;
+            color: #821717;
+        }
+        .card.rare .card-title {
+            color: #ffd700;
+            text-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
+        }
+
+        /* 符箓印章 */
+        .seal {
+            margin-top: 15px;
+            width: 24px;
+            height: 24px;
+            background: #821717;
+            color: #e3bc86;
+            font-size: 14px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 2px;
+            font-weight: bold;
+        }
+        .card.rare .seal {
+            background: #ffd700;
+            color: #1a1510;
+        }
+
+        .card-desc {
+            writing-mode: vertical-rl;
+            font-family: "STKaiti", "KaiTi", "楷体", serif;
+            font-size: 13px;
+            color: #664433;
+            letter-spacing: 2px;
+        }
+        .card.rare .card-desc { color: #d1b894; }
+
+        /* ================= 粒子系统 ================= */
+        #particles {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 10;
+        }
+        .particle {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 6px;
+            height: 6px;
+            background: #ffcc00;
+            border-radius: 50%;
+            opacity: 0;
+            box-shadow: 0 0 10px #ffcc00;
+        }
+        .particle.rare {
+            background: #fff;
+            box-shadow: 0 0 15px #ffd700, 0 0 30px #ff8c00;
+            width: 8px; height: 8px;
+        }
+        @keyframes flyOut {
+            0% { transform: translate(0, 0) scale(0); opacity: 1; }
+            50% { opacity: 1; }
+            100% { transform: translate(var(--tx), var(--ty)) scale(var(--scale)); opacity: 0; }
+        }
+
+        /* ================= UI 层 ================= */
+        .ui-layer {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            padding-bottom: 12%;
+        }
+
+        .btn {
+            position: absolute;
+            pointer-events: auto;
+            padding: 15px 45px;
+            font-size: 18px;
+            font-weight: bold;
+            color: #fce8b3;
+            background: linear-gradient(180deg, #8a2020 0%, #5c1111 100%);
+            border: 2px solid #d4af37;
+            border-radius: 30px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5), inset 0 2px 5px rgba(255,255,255,0.2);
+            transition: all 0.4s;
+            letter-spacing: 4px;
+            text-indent: 4px; /* 弥补字间距视觉居中 */
+        }
+        .btn:hover {
+            filter: brightness(1.2);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(212, 175, 55, 0.4), inset 0 2px 5px rgba(255,255,255,0.2);
+        }
+        .btn:active {
+            transform: translateY(1px);
+        }
+
+        .draw-btn.hidden, .reset-btn {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(20px);
+        }
+        .reset-btn.visible {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateY(0);
+        }
+
+        /* 稀有卡震屏特效 */
+        @keyframes shake {
+            0%, 100% { transform: translate(0, 0); }
+            10%, 30%, 50%, 70%, 90% { transform: translate(-3px, -3px); }
+            20%, 40%, 60%, 80% { transform: translate(3px, 3px); }
+        }
+        .viewport.shake {
+            animation: shake 0.5s ease-in-out;
+        }
+    </style>
+</head>
+<body>
+
+<div class="viewport" id="viewport">
+    <div class="scene" id="scene">
+        <div class="envelope-wrapper" id="envelopeWrapper">
+            <div class="envelope" id="envelope">
+                <!-- 信封背部 -->
+                <svg class="env-bg" width="300" height="180" viewBox="0 0 300 180">
+                    <rect width="300" height="180" rx="6" fill="#4a0e0e" />
+                </svg>
+                
+                <!-- 信封内部圣光 -->
+                <div class="light-burst" id="lightBurst"></div>
+                
+                <!-- 符箓卡牌 -->
+                <div class="card" id="card">
+                    <div class="card-inner">
+                        <div class="card-front"></div>
+                        <div class="card-back">
+                            <div class="card-border"></div>
+                            <div class="card-rarity" id="cardRarity">普通</div>
+                            <div class="talisman-content">
+                                <div class="text-group">
+                                    <div class="card-title" id="cardTitle">诸事皆顺符</div>
+                                    <div class="seal" id="cardSeal">吉</div>
+                                </div>
+                                <div class="card-desc" id="cardDesc">万事如意，顺风顺水</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 信封正面 (侧翼与下翻页) -->
+                <svg class="env-front" width="300" height="180" viewBox="0 0 300 180">
+                    <polygon points="0,0 150,110 0,180" fill="#691212" stroke="#d4af37" stroke-width="2" stroke-linejoin="round"/>
+                    <polygon points="300,0 150,110 300,180" fill="#691212" stroke="#d4af37" stroke-width="2" stroke-linejoin="round"/>
+                    <polygon points="0,180 150,110 300,180" fill="#821717" stroke="#d4af37" stroke-width="2" stroke-linejoin="round"/>
+                </svg>
+                
+                <!-- 信封上盖 -->
+                <div class="flap">
+                    <svg width="300" height="120" viewBox="0 0 300 120">
+                        <polygon points="0,0 150,110 300,0" fill="#9c1d1d" stroke="#d4af37" stroke-width="2" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+        <div id="particles"></div>
+    </div>
+    
+    <!-- 交互 UI 层 -->
+    <div class="ui-layer">
+        <button class="btn draw-btn" id="drawBtn" onclick="startDraw()">抽 卡</button>
+        <button class="btn reset-btn" id="resetBtn" onclick="resetDraw()">再抽一次</button>
+    </div>
+</div>
+
+<script>
+    // 卡池配置
+    const cardPool = [
+        { name: "诸事皆顺符", rarity: "普通", desc: "万事如意，顺风顺水", type: "ordinary", seal: "顺" },
+        { name: "退散戾气符", rarity: "普通", desc: "净化周身，平和安宁", type: "ordinary", seal: "净" },
+        { name: "灵光护体符", rarity: "普通", desc: "护卫心神，万邪不侵", type: "ordinary", seal: "护" },
+        { name: "防窥结界符", rarity: "普通", desc: "隐匿气息，守护隐私", type: "ordinary", seal: "界" },
+        { name: "隐身符", rarity: "普通", desc: "行踪难测，避开纷扰", type: "ordinary", seal: "隐" },
+        { name: "明辨符", rarity: "普通", desc: "慧眼如炬，洞悉真伪", type: "ordinary", seal: "明" },
+        { name: "镀金符", rarity: "稀有", desc: "绝佳好运，万丈光芒", type: "rare", seal: "极" }
+    ];
+
+    let isAnimating = false;
+
+    // 抽卡核心逻辑：5% 极大概率出稀有，剩余 95% 均分普通卡
+    function rollCard() {
+        const r = Math.random();
+        if (r <= 0.05) {
+            return cardPool[6]; // 镀金符
+        } else {
+            const index = Math.floor(Math.random() * 6);
+            return cardPool[index];
+        }
+    }
+
+    // 生成四散粒子
+    function spawnParticles(isRare) {
+        const container = document.getElementById('particles');
+        container.innerHTML = '';
+        const count = isRare ? 60 : 25;
+        
+        for(let i = 0; i < count; i++) {
+            const p = document.createElement('div');
+            p.className = 'particle';
+            if (isRare) p.classList.add('rare');
+            
+            // 环形随机扩散
+            const angle = Math.random() * Math.PI * 2;
+            const distance = Math.random() * 180 + 60; 
+            const tx = Math.cos(angle) * distance;
+            const ty = Math.sin(angle) * distance - 40; 
+            const scale = Math.random() * 1.2 + 0.5;
+            const duration = Math.random() * 1 + 1.2; 
+            const delay = Math.random() * 0.2;
+            
+            p.style.setProperty('--tx', `${tx}px`);
+            p.style.setProperty('--ty', `${ty}px`);
+            p.style.setProperty('--scale', scale);
+            p.style.animation = `flyOut ${duration}s ${delay}s ease-out forwards`;
+            
+            container.appendChild(p);
+        }
+    }
+
+    function startDraw() {
+        if (isAnimating) return;
+        isAnimating = true;
+
+        // 1. 抽取结果 & 注入 DOM
+        const result = rollCard();
+        const cardEl = document.getElementById('card');
+        
+        cardEl.className = 'card'; // reset
+        if (result.type === 'rare') cardEl.classList.add('rare');
+        
+        document.getElementById('cardTitle').textContent = result.name;
+        document.getElementById('cardDesc').textContent = result.desc;
+        document.getElementById('cardRarity').textContent = result.rarity;
+        document.getElementById('cardSeal').textContent = result.seal;
+
+        // 2. 第一阶段：锁定与聚焦
+        document.getElementById('drawBtn').classList.add('hidden');
+        document.getElementById('envelopeWrapper').style.animation = 'none'; // 停止悬浮
+        document.getElementById('scene').classList.add('zoomed');
+
+        // 3. 第二阶段：开启信封盖
+        setTimeout(() => {
+            document.getElementById('envelope').classList.add('open');
+        }, 500);
+
+        // 4. 第三阶段：内部爆光
+        setTimeout(() => {
+            const burst = document.getElementById('lightBurst');
+            burst.className = 'light-burst active' + (result.type === 'rare' ? ' rare-burst' : '');
+        }, 900);
+
+        // 5. 第四阶段：卡牌飞出与粒子特效
+        setTimeout(() => {
+            cardEl.classList.add('pop-out');
+            spawnParticles(result.type === 'rare');
+            
+            // 稀有卡震屏特效
+            if (result.type === 'rare') {
+                document.getElementById('viewport').classList.add('shake');
+                setTimeout(() => document.getElementById('viewport').classList.remove('shake'), 500);
+            }
+        }, 1200);
+
+        // 6. 收尾阶段：展示重置按钮
+        setTimeout(() => {
+            document.getElementById('resetBtn').classList.add('visible');
+            isAnimating = false;
+        }, 3000);
+    }
+
+    // 优雅重置状态：整体暗淡 -> 瞬间恢复初始 DOM 状态 -> 重新亮起
+    function resetDraw() {
+        if (isAnimating) return;
+        const scene = document.getElementById('scene');
+        
+        // 场景淡出
+        scene.style.opacity = '0';
+        document.getElementById('resetBtn').classList.remove('visible');
+        
+        setTimeout(() => {
+            // 后台清理状态
+            document.getElementById('scene').classList.remove('zoomed');
+            document.getElementById('envelope').classList.remove('open');
+            document.getElementById('lightBurst').className = 'light-burst';
+            document.getElementById('card').className = 'card';
+            document.getElementById('particles').innerHTML = '';
+            document.getElementById('drawBtn').classList.remove('hidden');
+            
+            // 场景淡入与恢复悬浮
+            scene.style.opacity = '1';
+            document.getElementById('envelopeWrapper').style.animation = 'float 4s ease-in-out infinite';
+        }, 400);
+    }
+</script>
+</body>
+</html>
