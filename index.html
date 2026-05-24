@@ -867,15 +867,17 @@
         function updateFlyingCard(dt) {
             if (!cardFlyActive) return;
             if (!flyingCardReady) return;
-            cardFlyProgress = Math.min(cardFlyProgress + dt / 1.25, 1);
+            cardFlyProgress = Math.min(cardFlyProgress + dt / 1.6, 1);
             const p = easeOutCubic(cardFlyProgress);
+            // 旋转单独用平滑缓动（easeInOutSine），全程匀速感更强，避免前段急转后段停顿的撕裂感
+            const rp = 0.5 - 0.5 * Math.cos(cardFlyProgress * Math.PI);
             const arc = Math.sin(cardFlyProgress * Math.PI) * 0.55;
             flyingCardGroup.visible = true;
             flyingCardGroup.position.x = Math.sin(cardFlyProgress * Math.PI) * 0.08;
             flyingCardGroup.position.y = lerp(0.12, 1.45, p) + arc;
             flyingCardGroup.position.z = lerp(-0.2, 1.35, p);
-            flyingCardGroup.rotation.x = lerp(-Math.PI / 2, 0.02, p);
-            flyingCardGroup.rotation.y = Math.PI * 2.4 * (1 - p);
+            flyingCardGroup.rotation.x = lerp(-Math.PI / 2, 0.02, rp);
+            flyingCardGroup.rotation.y = Math.PI * 2.4 * (1 - rp);
             flyingCardGroup.rotation.z = Math.sin(cardFlyProgress * Math.PI) * 0.18;
             flyingCardGroup.scale.setScalar(lerp(0.12, 1.16, p));
             flyingCardMat.opacity = Math.min(1, cardFlyProgress * 2.2);
@@ -910,6 +912,7 @@
         let cardFlyActive = false;
         let cardFlyStarted = false;
         let cardFlyProgress = 0;
+        let resultShown = false;
         let mouseX = 0, mouseY = 0;
 
         /* ============ Mouse Tracking ============ */
@@ -952,6 +955,7 @@
             cardFlyActive = false;
             cardFlyStarted = false;
             cardFlyProgress = 0;
+            resultShown = false;
             prepareFlyingCard(currentResult);
             pageTitle.classList.add('dimmed');
         });
@@ -977,6 +981,7 @@
             cardFlyActive = false;
             cardFlyStarted = false;
             cardFlyProgress = 0;
+            resultShown = false;
             ringMat.opacity = 0;
             burstMat.opacity = 0;
             resetFlyingCard();
@@ -1016,6 +1021,15 @@
 
             btnReset.classList.add('visible');
             state = 'done';
+        }
+
+        function completeDraw() {
+            if (state !== 'opening' || resultShown) return;
+            resultShown = true;
+            state = 'card';
+            cardFlyActive = false;
+            flyingCardGroup.visible = false;
+            showCardResult(currentResult);
         }
 
         /* ============ Main Animation Loop ============ */
@@ -1101,11 +1115,12 @@
                     cardFlyProgress = 0;
                 }
 
-                if (burstStarted && !burstActive && cardFlyStarted && cardFlyProgress >= 1 && state === 'opening') {
-                    state = 'card';
-                    cardFlyActive = false;
-                    flyingCardGroup.visible = false;
-                    showCardResult(currentResult);
+                const burstFinished = burstStarted && !burstActive;
+                const flyFinished = cardFlyStarted && cardFlyProgress >= 0.98;
+                const flyMissing = !cardFlyStarted && t > 4.8;
+                const flyStuck = cardFlyStarted && t > 6.0;
+                if ((burstFinished && (flyFinished || flyMissing || flyStuck)) || t > 6.8) {
+                    completeDraw();
                 }
             }
 
