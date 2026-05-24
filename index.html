@@ -163,15 +163,28 @@
             align-items: center;
             justify-content: center;
             pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.6s ease;
+        }
+
+        /* 背景渐入交给伪元素，避免父级 opacity 乘到 .result-card 上、以致 DOM 卡从 3D 卡位置同帧接管时被迫跟着淡入 */
+        .card-overlay::before {
+            content: '';
+            position: absolute;
+            inset: 0;
             background: radial-gradient(ellipse at 50% 40%, rgba(10, 8, 6, 0.6), rgba(10, 8, 6, 0.92));
             backdrop-filter: blur(3px);
+            -webkit-backdrop-filter: blur(3px);
+            opacity: 0;
+            transition: opacity 0.6s ease;
+            pointer-events: none;
+            z-index: -1;
         }
 
         .card-overlay.visible {
-            opacity: 1;
             pointer-events: auto;
+        }
+
+        .card-overlay.visible::before {
+            opacity: 1;
         }
 
         .result-card {
@@ -195,6 +208,15 @@
 
         .result-card.reveal-rare {
             animation: cardReveal 0.32s ease-out forwards;
+        }
+
+        /* 无缝接力模式：JS 在运行时计算 3D 飞卡的最终屏幕坐标，把 DOM 卡叠到同一像素位置上，同帧隐藏 3D 卡，不动画、不淡入 */
+        .result-card.seamless {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            transition: none;
+            animation: none;
+            opacity: 1;
         }
 
         @keyframes cardReveal {
@@ -1037,6 +1059,9 @@
             if (state !== 'done') return;
             cardOverlay.classList.remove('visible');
             resultCard.className = 'result-card';
+            resultCard.style.left = '';
+            resultCard.style.top = '';
+            resultCard.style.width = '';
             btnReset.classList.remove('visible');
             screenFlash.className = 'screen-flash';
             pageTitle.classList.remove('dimmed');
@@ -1065,10 +1090,45 @@
             }, 700);
         });
 
+        /* ============ Project 3D Flying Card to Screen Coords ============ */
+        // 把飞卡的 4 个本地角点过一遍世界矩阵 + 投影矩阵，求出屏幕上的包围矩（中心点 + 宽高）
+        function projectFlyingCardToScreen() {
+            camera.updateMatrixWorld();
+            flyingCardGroup.updateMatrixWorld(true);
+            const cornersLocal = [
+                new THREE.Vector3(-0.5, -0.5, 0),
+                new THREE.Vector3(0.5, -0.5, 0),
+                new THREE.Vector3(-0.5, 0.5, 0),
+                new THREE.Vector3(0.5, 0.5, 0),
+            ];
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            const tmp = new THREE.Vector3();
+            for (const c of cornersLocal) {
+                tmp.copy(c);
+                flyingCardMesh.localToWorld(tmp);
+                tmp.project(camera);
+                if (tmp.x < minX) minX = tmp.x;
+                if (tmp.x > maxX) maxX = tmp.x;
+                if (tmp.y < minY) minY = tmp.y;
+                if (tmp.y > maxY) maxY = tmp.y;
+            }
+            const cx = ((minX + maxX) / 2 + 1) * 0.5 * window.innerWidth;
+            const cy = (1 - (minY + maxY) / 2) * 0.5 * window.innerHeight;
+            const widthPx = (maxX - minX) * 0.5 * window.innerWidth;
+            const heightPx = (maxY - minY) * 0.5 * window.innerHeight;
+            if (!isFinite(cx) || !isFinite(cy) || widthPx <= 0 || heightPx <= 0) return null;
+            return { x: cx, y: cy, width: widthPx, height: heightPx };
+        }
+
         /* ============ Show Card Result in DOM ============ */
         function showCardResult(result) {
             const isRare = result.rarity === 'rare' || result.name === HIDDEN_CARD_NAME;
             resultCard.className = 'result-card ' + result.rarity;
+            // 清掉上一轮可能残留的内联定位样式
+            resultCard.style.left = '';
+            resultCard.style.top = '';
+            resultCard.style.width = '';
+
             document.getElementById('rarityBadge').hidden = true;
             const cardSymbol = document.getElementById('cardSymbol');
             cardSymbol.textContent = '';
@@ -1081,9 +1141,24 @@
             document.getElementById('cardDesc').hidden = true;
 
             cardOverlay.classList.add('visible');
-            requestAnimationFrame(() => {
-                resultCard.classList.add(isRare ? 'reveal-rare' : 'reveal');
-            });
+
+            // 优先走无缝接力：把 DOM 卡精确放到 3D 卡当前屏幕位置/尺寸上、同帧切换
+            const canSeamless = !flyingCardSkip && flyingCardReady && flyingCardGroup.visible;
+            const rect = canSeamless ? projectFlyingCardToScreen() : null;
+            if (rect) {
+                resultCard.classList.add('seamless');
+                resultCard.style.left = rect.x + 'px';
+                resultCard.style.top = rect.y + 'px';
+                resultCard.style.width = rect.width + 'px';
+                // 同帧隐藏 3D 卡：DOM 已在同位置同尺寸渲染同一张图，肉眼看不出切换
+                flyingCardGroup.visible = false;
+            } else {
+                // 兜底：纹理加载失败/被跳过时没有 3D 卡可接力，退化到原 fade reveal
+                flyingCardGroup.visible = false;
+                requestAnimationFrame(() => {
+                    resultCard.classList.add(isRare ? 'reveal-rare' : 'reveal');
+                });
+            }
 
             screenFlash.className = 'screen-flash';
             if (isRare) {
@@ -1100,7 +1175,7 @@
             resultShown = true;
             state = 'card';
             cardFlyActive = false;
-            flyingCardGroup.visible = false;
+            // 注意：不在此隐藏 3D 卡 —— 交给 showCardResult 在投影出屏幕位置、把 DOM 卡钉住同一位置后再同帧隐藏，避免闪烁
             showCardResult(currentResult);
         }
 
