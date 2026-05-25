@@ -514,7 +514,30 @@
 
             .card-overlay {
                 justify-content: center;
-                padding-bottom: 96px;
+                padding-bottom: 0;
+            }
+
+            .result-card.seamless {
+                left: 50% !important;
+                top: 50% !important;
+                width: min(72vw, 38vh, 300px) !important;
+            }
+
+            .result-card.reveal,
+            .result-card.reveal-rare {
+                animation: cardRevealMobile 0.32s ease-out forwards;
+            }
+
+            @keyframes cardRevealMobile {
+                0% {
+                    transform: translateY(0) scale(0.98) rotateY(0deg);
+                    opacity: 0;
+                }
+
+                100% {
+                    transform: translateY(0) scale(1) rotateY(0deg);
+                    opacity: 1;
+                }
             }
 
             .btn {
