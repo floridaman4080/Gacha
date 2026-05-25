@@ -163,33 +163,20 @@
             align-items: center;
             justify-content: center;
             pointer-events: none;
-        }
-
-        /* 背景渐入交给伪元素，避免父级 opacity 乘到 .result-card 上、以致 DOM 卡从 3D 卡位置同帧接管时被迫跟着淡入 */
-        .card-overlay::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: radial-gradient(ellipse at 50% 40%, rgba(10, 8, 6, 0.6), rgba(10, 8, 6, 0.92));
-            backdrop-filter: blur(3px);
-            -webkit-backdrop-filter: blur(3px);
             opacity: 0;
             transition: opacity 0.6s ease;
-            pointer-events: none;
-            z-index: -1;
+            background: radial-gradient(ellipse at 50% 40%, rgba(10, 8, 6, 0.6), rgba(10, 8, 6, 0.92));
+            backdrop-filter: blur(3px);
         }
 
         .card-overlay.visible {
-            pointer-events: auto;
-        }
-
-        .card-overlay.visible::before {
             opacity: 1;
+            pointer-events: auto;
         }
 
         .result-card {
             position: relative;
-            width: min(72vw, 380px);
+            width: clamp(260px, 70vw, 380px);
             min-height: unset;
             border-radius: 10px;
             padding: 0;
@@ -203,26 +190,21 @@
         }
 
         .result-card.reveal {
-            animation: cardReveal 0.32s ease-out forwards;
+            animation: cardReveal 1.3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
         }
 
         .result-card.reveal-rare {
-            animation: cardReveal 0.32s ease-out forwards;
-        }
-
-        /* 无缝接力模式：JS 在运行时计算 3D 飞卡的最终屏幕坐标，把 DOM 卡叠到同一像素位置上，同帧隐藏 3D 卡，不动画、不淡入 */
-        .result-card.seamless {
-            position: absolute;
-            transform: translate(-50%, -50%);
-            transition: none;
-            animation: none;
-            opacity: 1;
+            animation: cardRevealRare 1.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
         }
 
         @keyframes cardReveal {
             0% {
-                transform: translateY(-15px) scale(0.98) rotateY(0deg);
+                transform: translateY(160px) scale(0.4) rotateY(180deg);
                 opacity: 0;
+            }
+
+            35% {
+                opacity: 1;
             }
 
             100% {
@@ -493,63 +475,21 @@
 
         /* Responsive */
         @media(max-width:480px) {
-            .ui-layer {
-                padding-bottom: max(28px, 7vh);
-            }
-
-            .page-title {
-                top: 18px;
-                letter-spacing: 5px;
-            }
-
             .result-card {
-                width: min(72vw, 38vh, 300px);
-                min-height: unset;
-                padding: 0;
-            }
-
-            .card-symbol {
-                border-radius: 10px;
-            }
-
-            .card-overlay {
-                justify-content: center;
-                padding-bottom: 0;
-            }
-
-            .result-card.seamless {
-                left: 50% !important;
-                top: 50% !important;
-                width: min(72vw, 38vh, 300px) !important;
-            }
-
-            .result-card.reveal,
-            .result-card.reveal-rare {
-                animation: cardRevealMobile 0.32s ease-out forwards;
-            }
-
-            @keyframes cardRevealMobile {
-                0% {
-                    transform: translateY(0) scale(0.98) rotateY(0deg);
-                    opacity: 0;
-                }
-
-                100% {
-                    transform: translateY(0) scale(1) rotateY(0deg);
-                    opacity: 1;
-                }
+                width: clamp(220px, 82vw, 300px);
+                min-height: 390px;
+                padding: 28px 20px;
             }
 
             .btn {
-                padding: 13px 34px;
-                font-size: 15px;
-                letter-spacing: 2px;
+                padding: 14px 40px;
+                font-size: 16px;
+                letter-spacing: 3px;
             }
 
             .btn-reset {
-                margin-top: 10px;
-                padding: 10px 28px;
-                font-size: 13px;
+                padding: 10px 32px;
+                font-size: 14px;
             }
         }
     </style>
@@ -584,65 +524,18 @@
             { name: '灵光护体符', rarity: 'normal', image: 'images/灵光护体.png', desc: '灵光环绕，护佑身心。灵感涌动，思路清明。' },
             { name: '隐身符', rarity: 'normal', image: 'images/隐身符.png', desc: '隐匿身形，来去自如。低调行事，不惹尘埃。' },
         ];
-        const HIDDEN_CARD_NAME = '隐身符';
+        const HIDDEN_CARD_NAME = '明辨符';
 
-        /* 六种符平分概率 + 10 抽必出隐身符保底 */
-        const PITY_THRESHOLD = 10;
-        const PITY_STORAGE_KEY = 'gacha_pity_counter';
-
-        function getPityCounter() {
-            try {
-                const v = parseInt(localStorage.getItem(PITY_STORAGE_KEY), 10);
-                return Number.isFinite(v) && v >= 0 ? v : 0;
-            } catch (e) {
-                return 0;
-            }
-        }
-
-        function setPityCounter(v) {
-            try {
-                localStorage.setItem(PITY_STORAGE_KEY, String(v));
-            } catch (e) { /* localStorage 不可用时安静降级，本会话仍可保底 */ }
-        }
-
-        let pityCounter = getPityCounter();
-
+        /* 六种符平分概率 */
         function drawCard() {
-            // 第 10 抽强制保底：累计 PITY_THRESHOLD - 1 次未中后，下一抽必出隐身符
-            if (pityCounter >= PITY_THRESHOLD - 1) {
-                const hidden = CARD_POOL.find(c => c.name === HIDDEN_CARD_NAME);
-                if (hidden) {
-                    pityCounter = 0;
-                    setPityCounter(pityCounter);
-                    return hidden;
-                }
-            }
-            const result = CARD_POOL[Math.floor(Math.random() * CARD_POOL.length)];
-            if (result.name === HIDDEN_CARD_NAME) {
-                pityCounter = 0;
-            } else {
-                pityCounter += 1;
-            }
-            setPityCounter(pityCounter);
-            return result;
+            return CARD_POOL[Math.floor(Math.random() * CARD_POOL.length)];
         }
 
         /* ============ Three.js Scene ============ */
         const canvas = document.getElementById('three-canvas');
-        const isMobileDevice = (() => {
-            const ua = navigator.userAgent || '';
-            if (/Mobi|Android|iPhone|iPad|iPod/i.test(ua)) return true;
-            if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return true;
-            return window.innerWidth <= 768;
-        })();
-        const renderer = new THREE.WebGLRenderer({
-            canvas,
-            antialias: !isMobileDevice,
-            alpha: false,
-            powerPreference: 'high-performance'
-        });
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobileDevice ? 1.5 : 2));
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.setClearColor(0x080604, 1);
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         renderer.toneMappingExposure = 1.0;
@@ -651,7 +544,7 @@
         scene3d.fog = new THREE.FogExp2(0x080604, 0.08);
 
         const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-        camera.position.set(0, getIdleCameraY(), getIdleCameraZ());
+        camera.position.set(0, 1.2, 7);
         camera.lookAt(0, 0, 0);
 
         /* ============ Lighting ============ */
@@ -805,7 +698,7 @@
         envelopeGroup.add(glowPlane);
 
         /* ============ Background Particle Field ============ */
-        const BG_PARTICLES = isMobileDevice ? 150 : 400;
+        const BG_PARTICLES = 400;
         const bgParticlesGeo = new THREE.BufferGeometry();
         const bgPos = new Float32Array(BG_PARTICLES * 3);
         const bgSizes = new Float32Array(BG_PARTICLES);
@@ -836,7 +729,7 @@
         scene3d.add(bgParticles);
 
         /* ============ Burst Particle System ============ */
-        const BURST_COUNT = isMobileDevice ? 200 : 500;
+        const BURST_COUNT = 500;
         const burstGeo = new THREE.BufferGeometry();
         const burstPos = new Float32Array(BURST_COUNT * 3);
         const burstCol = new Float32Array(BURST_COUNT * 3);
@@ -884,7 +777,7 @@
         scene3d.add(burstMesh);
 
         /* ============ Spiral Ring Particles (ritual effect) ============ */
-        const RING_COUNT = isMobileDevice ? 60 : 120;
+        const RING_COUNT = 120;
         const ringGeo = new THREE.BufferGeometry();
         const ringPos = new Float32Array(RING_COUNT * 3);
         for (let i = 0; i < RING_COUNT; i++) {
@@ -919,7 +812,6 @@
         let flyingCardTexture = null;
         let flyingCardToken = 0;
         let flyingCardReady = false;
-        let flyingCardSkip = false;
 
         function resetFlyingCard() {
             flyingCardGroup.visible = false;
@@ -932,7 +824,6 @@
         function prepareFlyingCard(result) {
             const token = ++flyingCardToken;
             flyingCardReady = false;
-            flyingCardSkip = false;
             if (flyingCardTexture) {
                 flyingCardTexture.dispose();
                 flyingCardTexture = null;
@@ -941,60 +832,35 @@
             flyingCardMat.needsUpdate = true;
             flyingCardMesh.scale.set(1.45, 2.05, 1);
             resetFlyingCard();
-
-            // 纹理加载失败/超时时跳过 3D 飞卡环节，避免状态机被锁死、DOM 卡永远出不来
-            const markSkip = () => {
-                if (token !== flyingCardToken) return;
-                if (flyingCardReady) return;
-                flyingCardSkip = true;
+            textureLoader.load(result.image, (texture) => {
+                if (token !== flyingCardToken) {
+                    texture.dispose();
+                    return;
+                }
+                texture.encoding = THREE.sRGBEncoding;
+                texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+                const aspect = texture.image.width / texture.image.height;
+                const height = 2.1;
+                flyingCardMesh.scale.set(height * aspect, height, 1);
+                flyingCardTexture = texture;
+                flyingCardMat.map = texture;
+                flyingCardMat.needsUpdate = true;
                 flyingCardReady = true;
-            };
-
-            textureLoader.load(
-                result.image,
-                (texture) => {
-                    if (token !== flyingCardToken) {
-                        texture.dispose();
-                        return;
-                    }
-                    texture.encoding = THREE.sRGBEncoding;
-                    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-                    const aspect = texture.image.width / texture.image.height;
-                    const height = 2.1;
-                    flyingCardMesh.scale.set(height * aspect, height, 1);
-                    flyingCardTexture = texture;
-                    flyingCardMat.map = texture;
-                    flyingCardMat.needsUpdate = true;
-                    flyingCardReady = true;
-                },
-                undefined,
-                markSkip
-            );
-
-            // 兜底超时（移动端弱网/路径异常时常见），2.5s 没拿到纹理就直接走 DOM 卡片流程
-            setTimeout(markSkip, 2500);
+            });
         }
 
         function updateFlyingCard(dt) {
             if (!cardFlyActive) return;
             if (!flyingCardReady) return;
-            if (flyingCardSkip) {
-                // 跳过 3D 飞卡，让状态机继续推进到 'card' 阶段
-                cardFlyProgress = 1;
-                flyingCardGroup.visible = false;
-                return;
-            }
-            cardFlyProgress = Math.min(cardFlyProgress + dt / 1.6, 1);
+            cardFlyProgress = Math.min(cardFlyProgress + dt / 1.25, 1);
             const p = easeOutCubic(cardFlyProgress);
-            // 旋转单独用平滑缓动（easeInOutSine），全程匀速感更强，避免前段急转后段停顿的撕裂感
-            const rp = 0.5 - 0.5 * Math.cos(cardFlyProgress * Math.PI);
             const arc = Math.sin(cardFlyProgress * Math.PI) * 0.55;
             flyingCardGroup.visible = true;
             flyingCardGroup.position.x = Math.sin(cardFlyProgress * Math.PI) * 0.08;
             flyingCardGroup.position.y = lerp(0.12, 1.45, p) + arc;
             flyingCardGroup.position.z = lerp(-0.2, 1.35, p);
-            flyingCardGroup.rotation.x = lerp(-Math.PI / 2, 0.02, rp);
-            flyingCardGroup.rotation.y = Math.PI * 2.4 * (1 - rp);
+            flyingCardGroup.rotation.x = lerp(-Math.PI / 2, 0.02, p);
+            flyingCardGroup.rotation.y = Math.PI * 2.4 * (1 - p);
             flyingCardGroup.rotation.z = Math.sin(cardFlyProgress * Math.PI) * 0.18;
             flyingCardGroup.scale.setScalar(lerp(0.12, 1.16, p));
             flyingCardMat.opacity = Math.min(1, cardFlyProgress * 2.2);
@@ -1016,10 +882,10 @@
         let lidTargetAngle = 0;
         let lidCurrentAngle = 0;
         let lidOpenProgress = 0;
-        let camTargetZ = getIdleCameraZ();
-        let camCurrentZ = camTargetZ;
-        let camTargetY = getIdleCameraY();
-        let camCurrentY = camTargetY;
+        let camTargetZ = 7;
+        let camCurrentZ = 7;
+        let camTargetY = 1.2;
+        let camCurrentY = 1.2;
         let glowTarget = 0;
         let glowCurrent = 0;
         let burstActive = false;
@@ -1029,7 +895,6 @@
         let cardFlyActive = false;
         let cardFlyStarted = false;
         let cardFlyProgress = 0;
-        let resultShown = false;
         let mouseX = 0, mouseY = 0;
 
         /* ============ Mouse Tracking ============ */
@@ -1055,11 +920,6 @@
         /* ============ Easing Helpers ============ */
         function lerp(a, b, t) { return a + (b - a) * t; }
         function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
-        function isMobileLayout() { return window.innerWidth <= 480 || window.innerWidth / window.innerHeight < 0.7; }
-        function getIdleCameraZ() { return isMobileLayout() ? 8.6 : 7; }
-        function getOpenCameraZ() { return isMobileLayout() ? 6.4 : 5.0; }
-        function getIdleCameraY() { return isMobileLayout() ? 1.05 : 1.2; }
-        function getOpenCameraY() { return isMobileLayout() ? 0.7 : 0.8; }
 
         /* ============ Start Draw ============ */
         btnDraw.addEventListener('click', () => {
@@ -1072,7 +932,6 @@
             cardFlyActive = false;
             cardFlyStarted = false;
             cardFlyProgress = 0;
-            resultShown = false;
             prepareFlyingCard(currentResult);
             pageTitle.classList.add('dimmed');
         });
@@ -1082,9 +941,6 @@
             if (state !== 'done') return;
             cardOverlay.classList.remove('visible');
             resultCard.className = 'result-card';
-            resultCard.style.left = '';
-            resultCard.style.top = '';
-            resultCard.style.width = '';
             btnReset.classList.remove('visible');
             screenFlash.className = 'screen-flash';
             pageTitle.classList.remove('dimmed');
@@ -1092,8 +948,8 @@
             // Smooth reset of 3D state
             lidTargetAngle = 0;
             lidOpenProgress = 0;
-            camTargetZ = getIdleCameraZ();
-            camTargetY = getIdleCameraY();
+            camTargetZ = 7;
+            camTargetY = 1.2;
             glowTarget = 0;
             burstActive = false;
             burstStarted = false;
@@ -1101,7 +957,6 @@
             cardFlyActive = false;
             cardFlyStarted = false;
             cardFlyProgress = 0;
-            resultShown = false;
             ringMat.opacity = 0;
             burstMat.opacity = 0;
             resetFlyingCard();
@@ -1113,45 +968,10 @@
             }, 700);
         });
 
-        /* ============ Project 3D Flying Card to Screen Coords ============ */
-        // 把飞卡的 4 个本地角点过一遍世界矩阵 + 投影矩阵，求出屏幕上的包围矩（中心点 + 宽高）
-        function projectFlyingCardToScreen() {
-            camera.updateMatrixWorld();
-            flyingCardGroup.updateMatrixWorld(true);
-            const cornersLocal = [
-                new THREE.Vector3(-0.5, -0.5, 0),
-                new THREE.Vector3(0.5, -0.5, 0),
-                new THREE.Vector3(-0.5, 0.5, 0),
-                new THREE.Vector3(0.5, 0.5, 0),
-            ];
-            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-            const tmp = new THREE.Vector3();
-            for (const c of cornersLocal) {
-                tmp.copy(c);
-                flyingCardMesh.localToWorld(tmp);
-                tmp.project(camera);
-                if (tmp.x < minX) minX = tmp.x;
-                if (tmp.x > maxX) maxX = tmp.x;
-                if (tmp.y < minY) minY = tmp.y;
-                if (tmp.y > maxY) maxY = tmp.y;
-            }
-            const cx = ((minX + maxX) / 2 + 1) * 0.5 * window.innerWidth;
-            const cy = (1 - (minY + maxY) / 2) * 0.5 * window.innerHeight;
-            const widthPx = (maxX - minX) * 0.5 * window.innerWidth;
-            const heightPx = (maxY - minY) * 0.5 * window.innerHeight;
-            if (!isFinite(cx) || !isFinite(cy) || widthPx <= 0 || heightPx <= 0) return null;
-            return { x: cx, y: cy, width: widthPx, height: heightPx };
-        }
-
         /* ============ Show Card Result in DOM ============ */
         function showCardResult(result) {
             const isRare = result.rarity === 'rare' || result.name === HIDDEN_CARD_NAME;
             resultCard.className = 'result-card ' + result.rarity;
-            // 清掉上一轮可能残留的内联定位样式
-            resultCard.style.left = '';
-            resultCard.style.top = '';
-            resultCard.style.width = '';
-
             document.getElementById('rarityBadge').hidden = true;
             const cardSymbol = document.getElementById('cardSymbol');
             cardSymbol.textContent = '';
@@ -1164,24 +984,9 @@
             document.getElementById('cardDesc').hidden = true;
 
             cardOverlay.classList.add('visible');
-
-            // 优先走无缝接力：把 DOM 卡精确放到 3D 卡当前屏幕位置/尺寸上、同帧切换
-            const canSeamless = !flyingCardSkip && flyingCardReady && flyingCardGroup.visible;
-            const rect = canSeamless ? projectFlyingCardToScreen() : null;
-            if (rect) {
-                resultCard.classList.add('seamless');
-                resultCard.style.left = rect.x + 'px';
-                resultCard.style.top = rect.y + 'px';
-                resultCard.style.width = rect.width + 'px';
-                // 同帧隐藏 3D 卡：DOM 已在同位置同尺寸渲染同一张图，肉眼看不出切换
-                flyingCardGroup.visible = false;
-            } else {
-                // 兜底：纹理加载失败/被跳过时没有 3D 卡可接力，退化到原 fade reveal
-                flyingCardGroup.visible = false;
-                requestAnimationFrame(() => {
-                    resultCard.classList.add(isRare ? 'reveal-rare' : 'reveal');
-                });
-            }
+            requestAnimationFrame(() => {
+                resultCard.classList.add(isRare ? 'reveal-rare' : 'reveal');
+            });
 
             screenFlash.className = 'screen-flash';
             if (isRare) {
@@ -1193,22 +998,12 @@
             state = 'done';
         }
 
-        function completeDraw() {
-            if (state !== 'opening' || resultShown) return;
-            resultShown = true;
-            state = 'card';
-            cardFlyActive = false;
-            // 注意：不在此隐藏 3D 卡 —— 交给 showCardResult 在投影出屏幕位置、把 DOM 卡钉住同一位置后再同帧隐藏，避免闪烁
-            showCardResult(currentResult);
-        }
-
         /* ============ Main Animation Loop ============ */
         const clock = new THREE.Clock();
 
         function animate() {
             requestAnimationFrame(animate);
-            // 限制 dt 上限，防止后台切回 / 设备掉帧时出现巨大跳变
-            const dt = Math.min(clock.getDelta(), 0.05);
+            const dt = clock.getDelta();
             const elapsed = clock.getElapsedTime();
             stateTime += dt;
 
@@ -1232,8 +1027,8 @@
 
                 // Phase 1 (0 - 1s): Camera dolly in, stop floating
                 if (t < 1.0) {
-                    camTargetZ = getOpenCameraZ();
-                    camTargetY = getOpenCameraY();
+                    camTargetZ = 5.0;
+                    camTargetY = 0.8;
                     envelopeGroup.position.y *= 0.93;
                     envelopeGroup.rotation.z *= 0.9;
                     envelopeGroup.rotation.x = lerp(envelopeGroup.rotation.x, 0.35, 0.05);
@@ -1286,12 +1081,12 @@
                     cardFlyProgress = 0;
                 }
 
-                const burstFinished = burstStarted && !burstActive;
-                const flyFinished = cardFlyStarted && cardFlyProgress >= 0.98;
-                const flyMissing = !cardFlyStarted && t > 4.8;
-                const flyStuck = cardFlyStarted && t > 6.0;
-                if ((burstFinished && (flyFinished || flyMissing || flyStuck)) || t > 6.8) {
-                    completeDraw();
+                // Phase 5: Show card after the burst finishes
+                if (burstStarted && !burstActive && state === 'opening') {
+                    state = 'card';
+                    cardFlyActive = false;
+                    flyingCardGroup.visible = false;
+                    showCardResult(currentResult);
                 }
             }
 
@@ -1400,14 +1195,6 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-            if (state === 'idle') {
-                camTargetZ = getIdleCameraZ();
-                camCurrentZ = camTargetZ;
-                camTargetY = getIdleCameraY();
-                camCurrentY = camTargetY;
-                camera.position.z = camCurrentZ;
-                camera.position.y = camCurrentY;
-            }
         });
     </script>
 </body>
